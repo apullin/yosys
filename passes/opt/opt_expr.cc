@@ -420,6 +420,11 @@ int get_highest_hot_index(RTLIL::SigSpec signal)
 
 void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 {
+	struct CellTopoNode {
+		int index;
+		bool operator<(const CellTopoNode &other) const { return index < other.index; }
+	};
+
 	if (may_consume_x != nullptr)
 		*may_consume_x = false;
 
@@ -522,26 +527,52 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 		handle_clkpol_celltype_swap(cell, "$_DLATCHSR_??N_", "$_DLATCHSR_??P_", ID::R, assign_map, invert_map);
 	}
 
-	TopoSort<RTLIL::Cell*, RTLIL::IdString::compare_ptr_by_name<RTLIL::Cell>> cells;
-	dict<RTLIL::SigBit, Cell*> outbit_to_cell;
+	std::vector<RTLIL::Cell*> eval_cells;
 
 	for (auto cell : module->cells())
+	if ((whole_module_selected || design->selected(module, cell)) && yosys_celltypes.cell_evaluable(cell->type))
+		eval_cells.push_back(cell);
+
+	// Preserve the original name-based order while using compact IDs in the graph.
+	// Inserting nodes in ID order also makes each ID the TopoSort internal index
+	// consumed by edge(int, int) below.
+	std::sort(eval_cells.begin(), eval_cells.end(), RTLIL::IdString::compare_ptr_by_name<RTLIL::Cell>());
+
+	TopoSort<CellTopoNode> cells;
+	dict<RTLIL::Cell*, int> cell_to_index;
+	for (int cell_index = 0; cell_index < GetSize(eval_cells); cell_index++) {
+		cell_to_index[eval_cells[cell_index]] = cell_index;
+		int node_index = cells.node(CellTopoNode{cell_index});
+		log_assert(node_index == cell_index);
+	}
+
+	dict<RTLIL::SigBit, int> outbit_to_index;
+	// Retain module iteration order here to preserve the old last-producer-wins
+	// behavior for multiply-driven bits.
+	for (auto cell : module->cells())
 	if ((whole_module_selected || design->selected(module, cell)) && yosys_celltypes.cell_evaluable(cell->type)) {
+		int cell_index = cell_to_index.at(cell);
 		for (auto &conn : cell->connections())
 		if (yosys_celltypes.cell_output(cell->type, conn.first))
 		for (auto bit : assign_map(conn.second))
-			outbit_to_cell[bit] = cell;
-		cells.node(cell);
+			outbit_to_index[bit] = cell_index;
 	}
-
-	for (auto cell : module->cells())
-	if ((whole_module_selected || design->selected(module, cell)) && yosys_celltypes.cell_evaluable(cell->type)) {
-		const int r_index = cells.node(cell);
+	// The compact consumer ID is also a bounded per-consumer stamp. Since every
+	// consumer is visited exactly once, duplicate producers can be suppressed
+	// without clearing this vector or maintaining a wrapping generation counter.
+	std::vector<int> left_index_seen(GetSize(eval_cells), -1);
+	for (int r_index = 0; r_index < GetSize(eval_cells); r_index++) {
+		auto cell = eval_cells[r_index];
 		for (auto &conn : cell->connections())
 		if (yosys_celltypes.cell_input(cell->type, conn.first))
 		for (auto bit : assign_map(conn.second))
-		if (outbit_to_cell.count(bit))
-			cells.edge(cells.node(outbit_to_cell.at(bit)), r_index);
+			if (auto it = outbit_to_index.find(bit); it != outbit_to_index.end()) {
+				int l_index = it->second;
+				if (left_index_seen[l_index] != r_index) {
+					left_index_seen[l_index] = r_index;
+					cells.edge(l_index, r_index);
+				}
+			}
 	}
 
 	if (!cells.sort()) {
@@ -550,8 +581,9 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 		log("Couldn't topologically sort cells, optimizing module %s may take a longer time.\n", module);
 	}
 
-	for (auto cell : cells.sorted)
+	for (auto topo_node : cells.sorted)
 	{
+		auto cell = eval_cells[topo_node.index];
 #define ACTION_DO(_p_, _s_) do { replace_cell(cell, input.as_string(), _p_, _s_); goto next_cell; } while (0)
 #define ACTION_DO_Y(_v_) ACTION_DO(ID::Y, RTLIL::SigSpec(RTLIL::State::S ## _v_))
 
