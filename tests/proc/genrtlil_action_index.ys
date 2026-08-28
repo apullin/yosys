@@ -1,0 +1,139 @@
+read_verilog -formal -sv <<EOT
+module gold (
+	input        clk,
+	input  [3:0] sel,
+	input  [7:0] a, b, c, d,
+	output [7:0] y,
+	output [3:0] z,
+	output [3:0] u, v,
+	output reg [3:0] q, r
+);
+	assign y = a;
+	assign z = b[3:0];
+	assign u[3:2] = a[3:2];
+	assign u[1] = sel[1] ? b[1] : (sel[0] ? d[1] : b[1]);
+	assign u[0] = sel[1] ? c[0] : d[0];
+	assign v[3:2] = b[3:2];
+	assign v[1] = !sel[1] && sel[0] ? c[1] : b[1];
+	assign v[0] = sel[1] ? b[0] : a[1];
+	always @(posedge clk) begin
+		q[3:2] <= a[3:2];
+		q[1] <= sel[1] ? b[1] : (sel[0] ? d[1] : b[1]);
+		q[0] <= sel[1] ? c[0] : d[0];
+		r[3:2] <= b[3:2];
+		r[1] <= !sel[1] && sel[0] ? c[1] : b[1];
+		r[0] <= sel[1] ? b[0] : a[1];
+	end
+endmodule
+
+module gate (
+	input        clk,
+	input  [3:0] sel,
+	input  [7:0] a, b, c, d,
+	output reg [7:0] y,
+	output reg [3:0] z,
+	output reg [3:0] u, v,
+	output reg [3:0] q, r
+);
+	always @* begin
+		y = c;
+		z = d[3:0];
+		y[3:0] = b[3:0];
+		y[1:0] = a[1:0];
+
+		case (sel[1:0])
+			2'b00: begin
+				{y[5:4], z[1:0]} = {b[1:0], c[1:0]};
+				case (sel[3:2])
+					2'b00: begin
+						{y[4:3], z[3:2]} = {c[1:0], d[1:0]};
+						y[4] = a[0];
+					end
+					2'b01: {y[3:2], z[2:1]} = {d[1:0], a[1:0]};
+					default: {y[2:1], z[3:2]} = {b[1:0], c[1:0]};
+				endcase
+				{y[4:3], z[3:2]} = {a[1:0], b[1:0]};
+			end
+			2'b01: begin
+				y[7:4] = d[7:4];
+				y[5:4] = c[1:0];
+			end
+			default: begin
+				z = a[3:0];
+				z[2:1] = b[1:0];
+			end
+		endcase
+
+		(* full_case *)
+		case (sel[0])
+			1'b0: {y[7], z[0]} = {c[0], d[0]};
+			1'b1: {y[6], z[1]} = {c[1], d[1]};
+		endcase
+
+		{y, z} = {a, b[3:0]};
+	end
+
+	always @* begin
+		u = a[3:0];
+		v = b[3:0];
+		case (sel[1])
+			1'b0: begin
+				u[1:0] = b[1:0];
+				case (sel[0])
+					1'b0: {u[0], v[0]} = {c[0], a[0]};
+					1'b1: {u[1], v[1]} = {d[1], c[1]};
+				endcase
+				{u[0], v[0]} = {d[0], a[1]};
+			end
+			1'b1: begin
+				u[1:0] = c[1:0];
+				u[1] = b[1];
+			end
+		endcase
+	end
+
+	always @(posedge clk) begin
+		q <= a[3:0];
+		r <= b[3:0];
+		case (sel[1])
+			1'b0: begin
+				q[1:0] <= b[1:0];
+				case (sel[0])
+					1'b0: {q[0], r[0]} <= {c[0], a[0]};
+					1'b1: {q[1], r[1]} <= {d[1], c[1]};
+				endcase
+				{q[0], r[0]} <= {d[0], a[1]};
+			end
+			1'b1: begin
+				q[1:0] <= c[1:0];
+				q[1] <= b[1];
+			end
+		endcase
+	end
+endmodule
+
+module effects (input clk, input [1:0] sel, input a);
+	always @(posedge clk) begin
+		case (sel)
+			2'b00: begin
+				case (a)
+					1'b0: $display("a=%b", a);
+					default: assert(a);
+				endcase
+			end
+			default: begin end
+		endcase
+	end
+endmodule
+EOT
+
+proc
+
+select -assert-count 1 -module effects t:$print
+select -assert-count 1 -module effects t:$check
+select -clear
+
+equiv_make gold gate equiv
+hierarchy -top equiv
+equiv_simple
+equiv_status -assert

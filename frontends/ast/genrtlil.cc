@@ -351,6 +351,19 @@ struct AST_INTERNAL::ProcessGenerator
 	// Track which signals have been assigned in current_case to avoid unnecessary removeSignalFromCaseTree calls
 	pool<RTLIL::SigBit> current_case_assigned_bits;
 
+	struct CaseActionRef {
+		RTLIL::CaseRule *cs;
+		int index;
+	};
+
+	// Index each assigned wire by its case rule and action slot. This lets an
+	// overwrite visit only actions that can actually contain the target wire.
+	// Indexed action vectors must remain append-only, and all appends must use
+	// the helpers below. Removing LHS bits can leave stale references, but the
+	// index remains a safe superset (and the single-wire path compacts it).
+	dict<RTLIL::Wire*, std::vector<CaseActionRef>> wire_action_refs;
+	dict<RTLIL::CaseRule*, RTLIL::CaseRule*> case_parents;
+
 	ProcessGenerator(std::unique_ptr<AstNode> a, RTLIL::SigSpec initSyncSignalsArg = RTLIL::SigSpec()) : always(std::move(a)), initSyncSignals(initSyncSignalsArg), last_effect_priority(0)
 	{
 		// rewrite lookahead references
@@ -426,7 +439,7 @@ struct AST_INTERNAL::ProcessGenerator
 		if ((flag_nolatches || always->get_bool_attribute(ID::nolatches) || current_module->get_bool_attribute(ID::nolatches)) && !found_clocked_sync) {
 			subst_rvalue_map = subst_lvalue_from.to_sigbit_dict(RTLIL::SigSpec(RTLIL::State::Sx, GetSize(subst_lvalue_from)));
 		} else {
-			addChunkActions(current_case->actions, subst_lvalue_to, subst_lvalue_from);
+			addChunkActions(current_case, subst_lvalue_to, subst_lvalue_from);
 			// Track initial assignments
 			for (auto &bit : subst_lvalue_to)
 				if (bit.wire != NULL)
@@ -558,32 +571,62 @@ struct AST_INTERNAL::ProcessGenerator
 	// e.g. when the last statement in the code "a = 23; if (b) a = 42; a = 0;" is processed this
 	// function is called to clean up the first two assignments as they are overwritten by
 	// the third assignment.
-	void removeSignalFromCaseTree(const pool<RTLIL::SigBit> &pattern_bits, RTLIL::CaseRule *cs)
+	bool caseIsInSubtree(RTLIL::CaseRule *candidate, RTLIL::CaseRule *root)
 	{
-		// Optimization: check actions in reverse order and stop early if we've found all pattern bits
-		pool<RTLIL::SigBit> remaining_bits = pattern_bits;
+		while (candidate != root) {
+			if (!case_parents.count(candidate))
+				return false;
+			candidate = case_parents.at(candidate);
+		}
+		return true;
+	}
 
-		for (auto it = cs->actions.rbegin(); it != cs->actions.rend(); ++it) {
-			bool has_pattern = false;
-			for (auto &bit : it->first) {
-				if (bit.wire != NULL && remaining_bits.count(bit)) {
-					has_pattern = true;
-					remaining_bits.erase(bit);
+	void removeSignalFromCaseTree(const pool<RTLIL::SigBit> &pattern_bits, const pool<RTLIL::Wire*> &pattern_wires, RTLIL::CaseRule *cs)
+	{
+		if (pattern_wires.size() == 1) {
+			RTLIL::Wire *pattern_wire = *pattern_wires.begin();
+			if (!wire_action_refs.count(pattern_wire))
+				return;
+			auto &refs = wire_action_refs.at(pattern_wire);
+			int num_live_refs = 0;
+			for (auto ref : refs) {
+				if (!caseIsInSubtree(ref.cs, cs)) {
+					refs[num_live_refs++] = ref;
+					continue;
 				}
-			}
 
-			if (has_pattern) {
-				it->first.remove2(pattern_bits, &it->second);
-			}
+				auto &action = ref.cs->actions.at(ref.index);
+				action.first.remove2(pattern_bits, &action.second);
 
-			// Early exit if we've processed all bits in pattern
-			if (remaining_bits.empty())
-				break;
+				for (auto &chunk : action.first.chunks())
+					if (chunk.wire == pattern_wire) {
+						refs[num_live_refs++] = ref;
+						break;
+					}
+			}
+			refs.resize(num_live_refs);
+			return;
 		}
 
-		for (auto it = cs->switches.begin(); it != cs->switches.end(); it++)
-			for (auto it2 = (*it)->cases.begin(); it2 != (*it)->cases.end(); it2++)
-				removeSignalFromCaseTree(pattern_bits, *it2);
+		dict<RTLIL::CaseRule*, pool<int>> candidate_actions;
+		for (auto pattern_wire : pattern_wires)
+			if (wire_action_refs.count(pattern_wire))
+				for (auto ref : wire_action_refs.at(pattern_wire))
+					if (caseIsInSubtree(ref.cs, cs))
+						candidate_actions[ref.cs].insert(ref.index);
+		for (auto &case_actions : candidate_actions)
+			for (int index : case_actions.second) {
+				auto &action = case_actions.first->actions.at(index);
+				action.first.remove2(pattern_bits, &action.second);
+			}
+	}
+
+	void removeSignalFromCaseTree(const pool<RTLIL::SigBit> &pattern_bits, RTLIL::CaseRule *cs)
+	{
+		pool<RTLIL::Wire*> pattern_wires;
+		for (auto bit : pattern_bits)
+			pattern_wires.insert(bit.wire);
+		removeSignalFromCaseTree(pattern_bits, pattern_wires, cs);
 	}
 
 	void removeSignalFromCaseTree(const RTLIL::SigSpec &pattern, RTLIL::CaseRule *cs)
@@ -617,6 +660,32 @@ struct AST_INTERNAL::ProcessGenerator
 			actions.push_back(RTLIL::SigSig(lhs, rhs));
 			offset += lhs.size();
 		}
+	}
+
+	void trackCaseAction(RTLIL::CaseRule *cs, int index)
+	{
+		log_assert(cs == &proc->root_case || case_parents.count(cs));
+		log_assert(index >= 0 && index < GetSize(cs->actions));
+		pool<RTLIL::Wire*> action_wires;
+		for (auto &chunk : cs->actions.at(index).first.chunks())
+			if (chunk.wire != nullptr && !action_wires.count(chunk.wire)) {
+				action_wires.insert(chunk.wire);
+				wire_action_refs[chunk.wire].push_back({cs, index});
+			}
+	}
+
+	void addChunkActions(RTLIL::CaseRule *cs, RTLIL::SigSpec lvalue, RTLIL::SigSpec rvalue)
+	{
+		int first_action = GetSize(cs->actions);
+		addChunkActions(cs->actions, std::move(lvalue), std::move(rvalue));
+		for (int index = first_action; index < GetSize(cs->actions); index++)
+			trackCaseAction(cs, index);
+	}
+
+	void addCaseAction(RTLIL::CaseRule *cs, RTLIL::SigSpec lvalue, RTLIL::SigSpec rvalue)
+	{
+		cs->actions.push_back(RTLIL::SigSig(std::move(lvalue), std::move(rvalue)));
+		trackCaseAction(cs, GetSize(cs->actions) - 1);
 	}
 
 	// recursively process the AST and fill the RTLIL::Process
@@ -670,7 +739,7 @@ struct AST_INTERNAL::ProcessGenerator
 						current_case_assigned_bits.insert(bit);
 
 				remove_unwanted_lvalue_bits(lvalue, rvalue);
-				current_case->actions.push_back({lvalue, rvalue});
+				addCaseAction(current_case, std::move(lvalue), std::move(rvalue));
 			}
 			break;
 
@@ -715,11 +784,12 @@ struct AST_INTERNAL::ProcessGenerator
 
 					RTLIL::CaseRule *backup_case = current_case;
 					current_case = new RTLIL::CaseRule;
+					case_parents[current_case] = backup_case;
 					pool<RTLIL::SigBit> backup_assigned_bits = std::move(current_case_assigned_bits);
 					current_case_assigned_bits.clear();
 					set_src_attr(current_case, child.get());
 					last_generated_case = current_case;
-					addChunkActions(current_case->actions, this_case_eq_ltemp, this_case_eq_rvalue);
+					addChunkActions(current_case, this_case_eq_ltemp, this_case_eq_rvalue);
 					// Track temp assignments
 					for (auto &bit : this_case_eq_ltemp)
 						if (bit.wire != NULL)
@@ -751,13 +821,15 @@ struct AST_INTERNAL::ProcessGenerator
 					last_generated_case->compare.clear();
 			#else
 					default_case = new RTLIL::CaseRule;
-					addChunkActions(default_case->actions, this_case_eq_ltemp, SigSpec(State::Sx, GetSize(this_case_eq_rvalue)));
+					case_parents[default_case] = current_case;
+					addChunkActions(default_case, this_case_eq_ltemp, SigSpec(State::Sx, GetSize(this_case_eq_rvalue)));
 					sw->cases.push_back(default_case);
 			#endif
 				} else {
 					if (default_case == nullptr) {
 						default_case = new RTLIL::CaseRule;
-						addChunkActions(default_case->actions, this_case_eq_ltemp, this_case_eq_rvalue);
+						case_parents[default_case] = current_case;
+						addChunkActions(default_case, this_case_eq_ltemp, this_case_eq_rvalue);
 					}
 					sw->cases.push_back(default_case);
 				}
@@ -779,7 +851,7 @@ struct AST_INTERNAL::ProcessGenerator
 				if (has_overlap)
 					removeSignalFromCaseTree(this_case_eq_lvalue, current_case);
 
-				addChunkActions(current_case->actions, this_case_eq_lvalue, this_case_eq_ltemp);
+				addChunkActions(current_case, this_case_eq_lvalue, this_case_eq_ltemp);
 				// Track newly assigned bits
 				for (auto &bit : this_case_eq_lvalue)
 					if (bit.wire != NULL)
@@ -807,8 +879,8 @@ struct AST_INTERNAL::ProcessGenerator
 
 				Wire *en = current_module->addWire(TwineSpec::Suffix{name, "_EN"}, 1);
 				set_src_attr(en, ast);
-				proc->root_case.actions.push_back({en, SigSpec(false)});
-				current_case->actions.push_back({en, SigSpec(true)});
+				addCaseAction(&proc->root_case, en, SigSpec(false));
+				addCaseAction(current_case, en, SigSpec(true));
 
 				RTLIL::SigSpec triggers;
 				RTLIL::Const::Builder polarity_builder;
@@ -905,8 +977,8 @@ struct AST_INTERNAL::ProcessGenerator
 
 				Wire *en = current_module->addWire(TwineSpec::Suffix{cellname, "_EN"}, 1);
 				set_src_attr(en, ast);
-				proc->root_case.actions.push_back({en, SigSpec(false)});
-				current_case->actions.push_back({en, SigSpec(true)});
+				addCaseAction(&proc->root_case, en, SigSpec(false));
+				addCaseAction(current_case, en, SigSpec(true));
 
 				RTLIL::SigSpec triggers;
 				RTLIL::Const::Builder polarity_builder;
