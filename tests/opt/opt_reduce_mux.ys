@@ -1,0 +1,75 @@
+read_rtlil << EOT
+
+module \top
+	wire width 4 input 0 \A
+	wire input 1 \S
+	wire width 4 output 2 \Y
+	wire width 4 \B
+	connect \B \A
+
+	cell $mux $0
+		parameter \WIDTH 4
+		connect \A \A
+		connect \B \B
+		connect \S \S
+		connect \Y \Y
+	end
+end
+
+EOT
+
+equiv_opt -assert opt_reduce
+opt_reduce
+select -assert-count 0 t:$mux
+
+design -reset
+
+read_rtlil << EOT
+
+module \top
+	wire width 3 input 0 \A
+	wire width 2 input 1 \B
+	wire input 2 \S
+	wire width 4 output 3 \Y
+
+	cell $mux $0
+		parameter \WIDTH 4
+		connect \A { \A [2] \A [0] \A [0] \A [0] }
+		connect \B { \A [2] \B [1] \B [0] \B [0] }
+		connect \S \S
+		connect \Y \Y
+	end
+end
+
+EOT
+
+equiv_opt -assert opt_reduce -fine
+opt_reduce -fine
+select -assert-count 1 t:$mux r:WIDTH=2 %i
+
+design -reset
+
+read_rtlil << EOT
+
+module \top
+	wire width 3 input 0 \A
+	wire input 1 \B
+	wire width 2 input 2 \C
+	wire width 2 input 3 \S
+	wire width 4 output 4 \Y
+
+	cell $pmux $0
+		parameter \WIDTH 4
+		parameter \S_WIDTH 2
+		connect \A { \A [2] \A [0] \A [0] \A [0] }
+		connect \B { \A [2] \C [1] \C [0] \C [0] \A [2] \B \B \B }
+		connect \S \S
+		connect \Y \Y
+	end
+end
+
+EOT
+
+equiv_opt -assert opt_reduce -fine
+opt_reduce -fine
+select -assert-count 1 t:$pmux r:WIDTH=2 %i

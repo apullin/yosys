@@ -107,8 +107,21 @@ struct OptReduceWorker
 	{
 		RTLIL::SigSpec sig_a = assign_map(cell->getPort(ID::A));
 		RTLIL::SigSpec sig_b = assign_map(cell->getPort(ID::B));
-		RTLIL::SigSpec sig_s = assign_map(cell->getPort(ID::S));
 
+		// Fast path for plain muxes: after SigMap canonicalization, only A==B
+		// can be simplified here.
+		if (cell->type == ID($mux)) {
+			if (sig_a == sig_b) {
+				module->connect(cell->getPort(ID::Y), cell->getPort(ID::A));
+				assign_map.add(cell->getPort(ID::Y), cell->getPort(ID::A));
+				module->remove(cell);
+				did_something = true;
+				total_count++;
+			}
+			return;
+		}
+
+		RTLIL::SigSpec sig_s = assign_map(cell->getPort(ID::S));
 		RTLIL::SigSpec new_sig_b, new_sig_s;
 		dict<RTLIL::SigSpec, std::vector<RTLIL::SigBit>> grouped_b_to_s;
 
@@ -333,35 +346,56 @@ struct OptReduceWorker
 		}
 	}
 
+	bool same_input_tuple(const SigSpec &sig_a, const SigSpec &sig_b, int width, int lhs_idx, int rhs_idx) const
+	{
+		for (int lhs = lhs_idx, rhs = rhs_idx; lhs < GetSize(sig_a); lhs += width, rhs += width)
+			if (sig_a[lhs] != sig_a[rhs])
+				return false;
+
+		for (int lhs = lhs_idx, rhs = rhs_idx; lhs < GetSize(sig_b); lhs += width, rhs += width)
+			if (sig_b[lhs] != sig_b[rhs])
+				return false;
+
+		return true;
+	}
+
 	bool opt_mux_bits(RTLIL::Cell *cell)
 	{
 		SigSpec sig_a = assign_map(cell->getPort(ID::A));
 		SigSpec sig_b;
 		SigSpec sig_y = assign_map(cell->getPort(ID::Y));
 		int width = GetSize(sig_y);
+		int sig_a_width = GetSize(sig_a);
+		int sig_b_width = 0;
 
 		if (cell->type != ID($bmux))
 			sig_b = assign_map(cell->getPort(ID::B));
+		sig_b_width = GetSize(sig_b);
 
 		RTLIL::SigSig old_sig_conn;
 
-		dict<SigSpec, SigBit> consolidated_in_tuples;
+		// Bucket compact representatives by tuple hash, then compare them explicitly so
+		// hash collisions cannot merge unequal mux inputs.
+		dict<Hasher::hash_t, std::vector<int>> consolidated_in_tuples;
 		std::vector<int> swizzle;
+		swizzle.reserve(width);
 
 		for (int i = 0; i < width; i++)
 		{
-			SigSpec in_tuple;
+			Hasher tuple_hash;
 			bool all_tuple_bits_same = true;
+			SigBit tuple_first = sig_a[i];
 
-			in_tuple.append(sig_a[i]);
-			for (int j = i; j < GetSize(sig_a); j += width) {
-				in_tuple.append(sig_a[j]);
-				if (sig_a[j] != in_tuple[0])
+			for (int j = i; j < sig_a_width; j += width) {
+				SigBit bit = sig_a[j];
+				tuple_hash.eat(bit);
+				if (bit != tuple_first)
 					all_tuple_bits_same = false;
 			}
-			for (int j = i; j < GetSize(sig_b); j += width) {
-				in_tuple.append(sig_b[j]);
-				if (sig_b[j] != in_tuple[0])
+			for (int j = i; j < sig_b_width; j += width) {
+				SigBit bit = sig_b[j];
+				tuple_hash.eat(bit);
+				if (bit != tuple_first)
 					all_tuple_bits_same = false;
 			}
 
@@ -372,16 +406,21 @@ struct OptReduceWorker
 				continue;
 			}
 
-			auto it = consolidated_in_tuples.find(in_tuple);
-			if (it == consolidated_in_tuples.end())
-			{
-				consolidated_in_tuples[in_tuple] = sig_y[i];
-				swizzle.push_back(i);
+			auto &bucket = consolidated_in_tuples[tuple_hash.yield()];
+			int equivalent_idx = -1;
+			for (int candidate_idx : bucket) {
+				if (same_input_tuple(sig_a, sig_b, width, i, candidate_idx)) {
+					equivalent_idx = candidate_idx;
+					break;
+				}
 			}
-			else
-			{
+
+			if (equivalent_idx < 0) {
+				bucket.push_back(i);
+				swizzle.push_back(i);
+			} else {
 				old_sig_conn.first.append(sig_y[i]);
-				old_sig_conn.second.append(it->second);
+				old_sig_conn.second.append(sig_y[equivalent_idx]);
 			}
 		}
 
