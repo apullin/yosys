@@ -461,7 +461,7 @@ namespace AST_INTERNAL
 	extern bool flag_nodisplay, flag_dump_ast1, flag_dump_ast2, flag_no_dump_ptr, flag_dump_rtlil, flag_nolatches, flag_nomeminit;
 	extern bool flag_nomem2reg, flag_mem2reg, flag_lib, flag_noopt, flag_icells, flag_pwires, flag_autowire;
 	extern AST::AstNode *current_ast, *current_ast_mod;
-	extern std::map<std::string, AST::AstNode*> current_scope;
+	extern dict<std::string, AST::AstNode*> current_scope;
 	extern const dict<RTLIL::SigBit, RTLIL::SigBit> *genRTLIL_subst_ptr;
 	extern RTLIL::SigSpec ignoreThisSignalsInInitial;
 	extern AST::AstNode *current_always, *current_top_block, *current_block, *current_block_child;

@@ -1038,7 +1038,7 @@ public:
 		}
 	}
 
-	void import(std::map<std::string, AstNode*>& scope, AstNode* to_import) const {
+	void import(dict<std::string, AstNode*>& scope, AstNode* to_import) const {
 		// Check if this is a specific import and if this item should be imported
 		if (!is_wildcard && import_items.count(to_import->str) == 0)
 			return;
@@ -1257,8 +1257,6 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	if (type == AST_IDENTIFIER && current_scope.count(str) > 0 && (current_scope[str]->type == AST_PARAMETER || current_scope[str]->type == AST_LOCALPARAM || current_scope[str]->type == AST_ENUM_ITEM))
 		const_fold = true;
 
-	std::map<std::string, AstNode*> backup_scope;
-
 	// create name resolution entries for all objects with names
 	// also merge multiple declarations for the same wire (e.g. "output foobar; reg foobar;")
 	if (type == AST_MODULE || type == AST_INTERFACE) {
@@ -1387,7 +1385,6 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 			if (node->type == AST_PARAMETER || node->type == AST_LOCALPARAM || node->type == AST_WIRE || node->type == AST_AUTOWIRE || node->type == AST_GENVAR ||
 					node->type == AST_MEMORY || node->type == AST_FUNCTION || node->type == AST_TASK || node->type == AST_DPI_FUNCTION || node->type == AST_CELL ||
 					node->type == AST_TYPEDEF) {
-				backup_scope[node->str] = current_scope[node->str];
 				current_scope[node->str] = node;
 			}
 			if (node->type == AST_ENUM) {
@@ -2072,13 +2069,6 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	current_top_block = backup_current_top_block;
 	current_always = backup_current_always;
 	current_always_clocked = backup_current_always_clocked;
-
-	for (auto it = backup_scope.begin(); it != backup_scope.end(); it++) {
-		if (it->second == nullptr)
-			current_scope.erase(it->first);
-		else
-			current_scope[it->first] = it->second;
-	}
 
 	if (type == AST_MODULE || type == AST_INTERFACE)
 		current_scope.clear();
@@ -5965,7 +5955,7 @@ bool AstNode::replace_variables(std::map<std::string, AstNode::varinfo_t> &varia
 // attempt to statically evaluate a functions with all-const arguments
 std::unique_ptr<AstNode> AstNode::eval_const_function(AstNode *fcall, bool must_succeed)
 {
-	std::map<std::string, AstNode*> backup_scope = current_scope;
+	dict<std::string, AstNode*> backup_scope = current_scope;
 	std::map<std::string, AstNode::varinfo_t> variables;
 	auto block = std::make_unique<AstNode>(location, AST_BLOCK);
 	std::unique_ptr<AstNode> result = nullptr;
