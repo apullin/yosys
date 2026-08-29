@@ -1202,6 +1202,12 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 		return false;
 	}
 
+	if (type == AST_CONSTANT && children.empty() && attributes.empty()) {
+		basic_prep = true;
+		recursion_counter--;
+		return false;
+	}
+
 	// we do not look inside a task or function
 	// (but as soon as a task or function is instantiated we process the generated AST as usual)
 	if (type == AST_FUNCTION || type == AST_TASK) {
