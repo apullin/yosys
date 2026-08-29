@@ -204,13 +204,18 @@ bool AstNode::get_bool_attribute(RTLIL::IdString id)
 	return attr->integer != 0;
 }
 
+static unsigned int next_astnode_hashidx()
+{
+	static unsigned int hashidx_count = 123456789;
+	hashidx_count = mkhash_xorshift(hashidx_count);
+	return hashidx_count;
+}
+
 // create new node (AstNode constructor)
 // (the optional child arguments make it easier to create AST trees)
 AstNode::AstNode(AstSrcLocType loc, AstNodeType type, std::unique_ptr<AstNode> child1, std::unique_ptr<AstNode> child2, std::unique_ptr<AstNode> child3, std::unique_ptr<AstNode> child4)
 {
-	static unsigned int hashidx_count = 123456789;
-	hashidx_count = mkhash_xorshift(hashidx_count);
-	hashidx_ = hashidx_count;
+	hashidx_ = next_astnode_hashidx();
 	astnodes++;
 
 	this->type = type;
@@ -255,11 +260,20 @@ AstNode::AstNode(AstSrcLocType loc, AstNodeType type, std::unique_ptr<AstNode> c
 	fixup_hierarchy_flags();
 }
 
+AstNode::AstNode(CloneTag)
+{
+	// clone() owns this node before cloneInto() initializes its payload.
+	hashidx_ = next_astnode_hashidx();
+	astnodes++;
+	in_lvalue_from_above = false;
+	in_param_from_above = false;
+}
+
 // create a (deep recursive) copy of a node
 std::unique_ptr<AstNode> AstNode::clone() const
 {
-	auto that = std::make_unique<AstNode>(this->location, this->type);
-	cloneInto(*that.get());
+	auto that = std::unique_ptr<AstNode>(new AstNode(CloneTag{}));
+	cloneInto(*that);
 	return that;
 }
 
@@ -299,6 +313,7 @@ void AstNode::cloneInto(AstNode &other) const
 	// Keep in_lvalue_from_above and in_param_from_above untouched
 
 	other.delete_children();
+	other.children.reserve(children.size());
 	for (auto& child : this->children)
 		other.children.push_back(child->clone());
 	for (auto& [key, val] : this->attributes)

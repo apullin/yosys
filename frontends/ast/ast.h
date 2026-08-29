@@ -234,6 +234,11 @@ namespace AST
 		bool in_lvalue_from_above;
 		bool in_param_from_above;
 
+	private:
+		struct CloneTag {};
+		explicit AstNode(CloneTag);
+
+	public:
 		// creating and deleting nodes
 		AstNode(AstSrcLocType loc, AstNodeType type = AST_NONE, std::unique_ptr<AstNode> child1 = nullptr, std::unique_ptr<AstNode> child2 = nullptr, std::unique_ptr<AstNode> child3 = nullptr, std::unique_ptr<AstNode> child4 = nullptr);
 		std::unique_ptr<AstNode> clone() const;
