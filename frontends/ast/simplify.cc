@@ -710,6 +710,19 @@ static std::string prefix_id(const std::string &prefix, const std::string &str)
 	return prefix + str;
 }
 
+static void make_prefixed_id(std::string &result, const std::string &prefix, size_t prefix_size, std::string_view ident)
+{
+	log_assert(prefix_size > 0 && prefix_size <= prefix.size());
+	log_assert(prefix.front() == '$' || prefix.front() == '\\');
+	log_assert(prefix[prefix_size - 1] == '.');
+	log_assert(!ident.empty() && (ident.front() == '$' || ident.front() == '\\'));
+
+	result.assign(prefix.data(), prefix_size);
+	if (ident.front() == '\\')
+		ident.remove_prefix(1);
+	result.append(ident.data(), ident.size());
+}
+
 // direct access to this global should be limited to the following two functions
 static const RTLIL::Design *simplify_design_context = nullptr;
 static dict<std::string, RTLIL::IdString> simplify_design_modules;
@@ -5088,22 +5101,21 @@ void AstNode::expand_genblock(const std::string &prefix)
 {
 	if (type == AST_IDENTIFIER || type == AST_FCALL || type == AST_TCALL || type == AST_WIRETYPE || type == AST_PREFIX) {
 		log_assert(!str.empty());
+		std::string resolved;
+		resolved.reserve(prefix.size() + str.size());
 
 		// search starting in the innermost scope and then stepping outward
 		for (size_t ppos = prefix.size() - 1; ppos; --ppos) {
 			if (prefix.at(ppos) != '.') continue;
+			const size_t prefix_size = ppos + 1;
 
-			std::string new_prefix = prefix.substr(0, ppos + 1);
-			auto attempt_resolve = [&new_prefix](const std::string &ident) -> std::string {
-				std::string new_name = prefix_id(new_prefix, ident);
-				if (current_scope.count(new_name))
-					return new_name;
-				return {};
+			auto attempt_resolve = [&](std::string_view ident) {
+				make_prefixed_id(resolved, prefix, prefix_size, ident);
+				return current_scope.count(resolved) != 0;
 			};
 
 			// attempt to resolve the full identifier
-			std::string resolved = attempt_resolve(str);
-			if (!resolved.empty()) {
+			if (attempt_resolve(str)) {
 				str = resolved;
 				break;
 			}
@@ -5113,9 +5125,9 @@ void AstNode::expand_genblock(const std::string &prefix)
 			// hasn't yet been elaborated
 			for (size_t spos = str.size() - 1; spos; --spos) {
 				if (str.at(spos) != '.') continue;
-				resolved = attempt_resolve(str.substr(0, spos));
-				if (!resolved.empty()) {
-					str = resolved + str.substr(spos);
+				if (attempt_resolve(std::string_view(str).substr(0, spos))) {
+					resolved.append(str, spos, std::string::npos);
+					str = std::move(resolved);
 					ppos = 1; // break outer loop
 					break;
 				}
@@ -5172,6 +5184,8 @@ void AstNode::expand_genblock(const std::string &prefix)
 			if (!child->str.empty() && prefix.size() > 0) {
 				bool is_resolved = false;
 				std::string identifier_str = child->str;
+				std::string resolved;
+				resolved.reserve(prefix.size() + identifier_str.size());
 				if (current_ast_mod != nullptr && identifier_str.size() > current_ast_mod->str.size() && identifier_str.compare(0, current_ast_mod->str.size(), current_ast_mod->str) == 0) {
 					if (identifier_str.at(current_ast_mod->str.size()) == '.') {
 						identifier_str = '\\' + identifier_str.substr(current_ast_mod->str.size()+1, identifier_str.size());
@@ -5180,18 +5194,15 @@ void AstNode::expand_genblock(const std::string &prefix)
 				// search starting in the innermost scope and then stepping outward
 				for (size_t ppos = prefix.size() - 1; ppos; --ppos) {
 					if (prefix.at(ppos) != '.') continue;
+					const size_t prefix_size = ppos + 1;
 
-					std::string new_prefix = prefix.substr(0, ppos + 1);
-					auto attempt_resolve = [&new_prefix](const std::string &ident) -> std::string {
-						std::string new_name = prefix_id(new_prefix, ident);
-						if (current_scope.count(new_name))
-							return new_name;
-						return {};
+					auto attempt_resolve = [&](std::string_view ident) {
+						make_prefixed_id(resolved, prefix, prefix_size, ident);
+						return current_scope.count(resolved) != 0;
 					};
 
 					// attempt to resolve the full identifier
-					std::string resolved = attempt_resolve(identifier_str);
-					if (!resolved.empty()) {
+					if (attempt_resolve(identifier_str)) {
 						is_resolved = true;
 						break;
 					}
@@ -5200,16 +5211,17 @@ void AstNode::expand_genblock(const std::string &prefix)
 					// hasn't yet been elaborated
 					for (size_t spos = identifier_str.size() - 1; spos; --spos) {
 						if (identifier_str.at(spos) != '.') continue;
-						resolved = attempt_resolve(identifier_str.substr(0, spos));
-						if (!resolved.empty()) {
+						if (attempt_resolve(std::string_view(identifier_str).substr(0, spos))) {
 							is_resolved = true;
-							identifier_str = resolved + identifier_str.substr(spos);
+							resolved.append(identifier_str, spos, std::string::npos);
+							identifier_str = resolved;
 							ppos = 1; // break outer loop
 							break;
 						}
 					}
 					if (current_scope.count(identifier_str) == 0) {
 						AstNode *current_scope_ast = (current_ast_mod == nullptr) ? current_ast : current_ast_mod;
+						make_prefixed_id(resolved, prefix, prefix_size, identifier_str);
 						for (auto& node : current_scope_ast->children) {
 							switch (node->type) {
 							case AST_PARAMETER:
@@ -5221,7 +5233,7 @@ void AstNode::expand_genblock(const std::string &prefix)
 							case AST_FUNCTION:
 							case AST_TASK:
 							case AST_DPI_FUNCTION:
-								if (prefix_id(new_prefix, identifier_str) == node->str) {
+								if (resolved == node->str) {
 									is_resolved = true;
 									current_scope[node->str] = node.get();
 								}
@@ -5230,7 +5242,7 @@ void AstNode::expand_genblock(const std::string &prefix)
 								current_scope[node->str] = node.get();
 								for (auto& enum_node : node->children) {
 									log_assert(enum_node->type==AST_ENUM_ITEM);
-									if (prefix_id(new_prefix, identifier_str) == enum_node->str) {
+									if (resolved == enum_node->str) {
 										is_resolved = true;
 										current_scope[enum_node->str] = enum_node.get();
 									}
