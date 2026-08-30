@@ -50,11 +50,24 @@ static BigInteger const2big(const RTLIL::Const &val, bool as_signed, int &undef_
 		num_bits--;
 	}
 
-	for (auto i = 0; i < num_bits; i++)
-		if (val[i] == RTLIL::State::S0 || val[i] == RTLIL::State::S1)
-			mag.setBit(i, val[i] == inv_sign_bit);
+	BigUnsigned::Blk block = 0;
+	BigUnsigned::Index block_index = 0;
+	unsigned int bit_index = 0;
+	for (auto i = 0; i < num_bits; i++) {
+		State bit = val[i];
+		if (bit == RTLIL::State::S0 || bit == RTLIL::State::S1)
+			block |= BigUnsigned::Blk(bit == inv_sign_bit) << bit_index;
 		else if (undef_bit_pos < 0)
 			undef_bit_pos = i;
+
+		if (++bit_index == BigUnsigned::N) {
+			mag.setBlock(block_index++, block);
+			block = 0;
+			bit_index = 0;
+		}
+	}
+	if (bit_index != 0)
+		mag.setBlock(block_index, block);
 
 	if (sign == BigInteger::negative)
 		mag += 1;
