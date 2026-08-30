@@ -1,0 +1,97 @@
+setenv YOSYS_MAX_THREADS 4
+setenv YOSYS_WORK_UNITS_PER_THREAD 1
+logger -expect-no-warnings
+logger -expect warning "Driver-driver conflict for .*conflict_wire.*Resolved using constant\." 2
+
+read_rtlil << EOT
+module \top
+  wire width 4 input 1 \in
+  wire output 2 \attr_out
+  wire output 3 \partial_out
+  wire width 4 output 4 \whole_out
+  wire width 2 output 5 \split_lo
+  wire width 2 output 6 \split_hi
+  wire width 2 output 7 \conflict_out
+
+  attribute \priority 1
+  wire \attr_wire
+  wire \plain_wire
+  wire width 4 \partial_wire
+  wire width 4 \unused_wire
+  wire width 4 \whole_wire
+  wire width 4 \split_wire
+  wire width 2 \conflict_wire
+
+  cell $reduce_or \attr_use
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 2
+    parameter \Y_WIDTH 1
+    connect \A { \attr_wire \plain_wire }
+    connect \Y \attr_out
+  end
+
+  cell $not \partial_use
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 1
+    parameter \Y_WIDTH 1
+    connect \A \partial_wire [2]
+    connect \Y \partial_out
+  end
+
+  cell $not \whole_driver
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \in
+    connect \Y \whole_wire
+  end
+
+  cell $not \split_driver
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \in
+    connect \Y \split_wire
+  end
+
+  cell $not \conflict_driver
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 2
+    parameter \Y_WIDTH 2
+    connect \A \in [1:0]
+    connect \Y \conflict_wire
+  end
+
+  connect \plain_wire \attr_wire
+  connect \whole_out \whole_wire
+  connect \split_wire { \split_hi \split_lo }
+  connect \conflict_out \conflict_wire
+  connect \conflict_wire [0] 1'0
+end
+EOT
+
+design -save before_clean
+
+opt_clean -purge
+select -assert-count 1 top/w:attr_wire
+select -assert-count 0 top/w:plain_wire
+select -assert-count 1 top/w:partial_wire
+select -assert-count 0 top/w:unused_wire
+select -assert-count 1 top/w:split_wire
+select -assert-count 1 top/t:$reduce_or
+select -assert-count 4 top/t:$not
+write_rtlil -sort opt_clean_residuals_a.il
+
+design -load before_clean
+opt_clean -purge
+select -assert-count 1 top/w:attr_wire
+select -assert-count 0 top/w:plain_wire
+select -assert-count 1 top/w:partial_wire
+select -assert-count 0 top/w:unused_wire
+select -assert-count 1 top/w:split_wire
+select -assert-count 1 top/t:$reduce_or
+select -assert-count 4 top/t:$not
+write_rtlil -sort opt_clean_residuals_b.il
+
+exec -q -expect-return 0 -- cmp opt_clean_residuals_a.il opt_clean_residuals_b.il
+exec -q -expect-return 0 -- rm -f opt_clean_residuals_a.il opt_clean_residuals_b.il
