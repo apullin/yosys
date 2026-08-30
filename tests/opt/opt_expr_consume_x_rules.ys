@@ -1,0 +1,187 @@
+read_rtlil <<EOT
+module \consume_x_rules
+  wire width 4 input 1 \a
+  wire input 2 \bit
+  wire input 3 \sel
+  wire \z_alias
+  connect \z_alias 1'z
+
+  wire \reduce_and_y
+  cell $reduce_and \reduce_and_x
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 5
+    parameter \Y_WIDTH 1
+    connect \A { 1'x \a }
+    connect \Y \reduce_and_y
+  end
+
+  wire \reduce_or_y
+  cell $reduce_or \reduce_or_z_alias
+    parameter \A_SIGNED 0
+    parameter \A_WIDTH 5
+    parameter \Y_WIDTH 1
+    connect \A { \z_alias \a }
+    connect \Y \reduce_or_y
+  end
+
+  wire \xor_gate_y
+  cell $_XOR_ \xor_gate_x
+    connect \A \bit
+    connect \B 1'x
+    connect \Y \xor_gate_y
+  end
+
+  wire width 4 \add_y
+  cell $add \add_zero_a
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A 4'0000
+    connect \B \a
+    connect \Y \add_y
+  end
+
+  wire width 4 \sub_y
+  cell $sub \sub_zero_b
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0000
+    connect \Y \sub_y
+  end
+
+  wire width 4 \or_y
+  cell $or \or_zero_b
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0000
+    connect \Y \or_y
+  end
+
+  wire width 4 \xor_y
+  cell $xor \xor_zero_b
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0000
+    connect \Y \xor_y
+  end
+
+  wire width 4 \alu_y
+  wire width 4 \alu_x
+  wire width 4 \alu_co
+  cell $alu \alu_add_zero_b
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0000
+    connect \BI 1'0
+    connect \CI 1'0
+    connect \Y \alu_y
+    connect \X \alu_x
+    connect \CO \alu_co
+  end
+
+  wire width 4 \shl_y
+  cell $shl \shift_zero
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 2
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 2'00
+    connect \Y \shl_y
+  end
+
+  wire width 4 \mul_one_y
+  cell $mul \mul_one
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0001
+    connect \Y \mul_one_y
+  end
+
+  wire width 4 \mul_minus_one_y
+  cell $mul \mul_minus_one
+    parameter \A_SIGNED 1
+    parameter \B_SIGNED 1
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'1111
+    connect \Y \mul_minus_one_y
+  end
+
+  wire width 4 \div_y
+  cell $div \div_one
+    parameter \A_SIGNED 0
+    parameter \B_SIGNED 0
+    parameter \A_WIDTH 4
+    parameter \B_WIDTH 4
+    parameter \Y_WIDTH 4
+    connect \A \a
+    connect \B 4'0001
+    connect \Y \div_y
+  end
+
+  wire \mux_and_y
+  cell $mux \mux_to_and
+    parameter \WIDTH 1
+    connect \A 1'0
+    connect \B \bit
+    connect \S \sel
+    connect \Y \mux_and_y
+  end
+
+  wire \mux_or_y
+  cell $mux \mux_to_or
+    parameter \WIDTH 1
+    connect \A \bit
+    connect \B 1'1
+    connect \S \sel
+    connect \Y \mux_or_y
+  end
+end
+EOT
+
+design -save consume_x_rules
+
+opt_expr -mux_bool
+select -assert-none t:$reduce_and t:$reduce_or t:$_XOR_ t:$add t:$sub t:$alu t:$shl t:$mul t:$div t:$mux
+design -save consume_x_optimized
+
+design -load consume_x_rules
+opt_expr -mux_bool -keepdc
+select -assert-count 1 t:$reduce_and
+select -assert-count 1 t:$reduce_or
+select -assert-count 1 t:$_XOR_
+select -assert-count 1 t:$add
+select -assert-count 1 t:$sub
+select -assert-none t:$or
+select -assert-none t:$xor
+select -assert-count 1 t:$alu
+select -assert-none t:$shl
+select -assert-count 2 t:$mul
+select -assert-count 1 t:$div
+select -assert-count 2 t:$mux

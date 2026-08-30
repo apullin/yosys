@@ -55,7 +55,7 @@ struct OptExprWorker
 	void replace_undriven();
 	void replace_cell(RTLIL::Cell *cell, const std::string &info, IdString out_port, RTLIL::SigSpec out_val);
 	bool group_cell_inputs(RTLIL::Cell *cell, bool commutative);
-	void replace_const_cells(bool consume_x);
+	void replace_const_cells(bool consume_x, bool *may_consume_x = nullptr);
 	void replace_const_connections();
 };
 
@@ -418,8 +418,17 @@ int get_highest_hot_index(RTLIL::SigSpec signal)
 	return -1;
 }
 
-void OptExprWorker::replace_const_cells(bool consume_x)
+void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 {
+	if (may_consume_x != nullptr)
+		*may_consume_x = false;
+
+	auto consume_x_rule = [&](bool match) {
+		if (match && may_consume_x != nullptr)
+			*may_consume_x = true;
+		return match && consume_x;
+	};
+
 	assign_map.set(module);
 	dict<RTLIL::SigSpec, RTLIL::SigSpec> invert_map;
 
@@ -588,12 +597,12 @@ void OptExprWorker::replace_const_cells(bool consume_x)
 				}
 			}
 
-			if (detect_const_and && (found_zero || found_inv || (found_undef && consume_x))) {
+			if (detect_const_and && (found_zero || found_inv || consume_x_rule(found_undef))) {
 				replace_cell(cell, "const_and", ID::Y, RTLIL::State::S0);
 				goto next_cell;
 			}
 
-			if (detect_const_or && (found_one || found_inv || (found_undef && consume_x))) {
+			if (detect_const_or && (found_one || found_inv || consume_x_rule(found_undef))) {
 				replace_cell(cell, "const_or", ID::Y, RTLIL::State::S1);
 				goto next_cell;
 			}
@@ -1116,10 +1125,8 @@ skip_fine_alu:
 			if (input.match("**")) ACTION_DO_Y(x);
 			if (input.match("1*")) ACTION_DO_Y(x);
 			if (input.match("*1")) ACTION_DO_Y(x);
-			if (consume_x) {
-				if (input.match(" *")) ACTION_DO_Y(0);
-				if (input.match("* ")) ACTION_DO_Y(0);
-			}
+			if (consume_x_rule(input.match(" *"))) ACTION_DO_Y(0);
+			if (consume_x_rule(input.match("* "))) ACTION_DO_Y(0);
 			if (input.match(" 1")) ACTION_DO(ID::Y, input.extract(1, 1));
 			if (input.match("1 ")) ACTION_DO(ID::Y, input.extract(0, 1));
 		}
@@ -1135,10 +1142,8 @@ skip_fine_alu:
 			if (input.match("**")) ACTION_DO_Y(x);
 			if (input.match("0*")) ACTION_DO_Y(x);
 			if (input.match("*0")) ACTION_DO_Y(x);
-			if (consume_x) {
-				if (input.match(" *")) ACTION_DO_Y(1);
-				if (input.match("* ")) ACTION_DO_Y(1);
-			}
+			if (consume_x_rule(input.match(" *"))) ACTION_DO_Y(1);
+			if (consume_x_rule(input.match("* "))) ACTION_DO_Y(1);
 			if (input.match(" 0")) ACTION_DO(ID::Y, input.extract(1, 1));
 			if (input.match("0 ")) ACTION_DO(ID::Y, input.extract(0, 1));
 		}
@@ -1152,10 +1157,8 @@ skip_fine_alu:
 			if (input.match("01")) ACTION_DO_Y(1);
 			if (input.match("10")) ACTION_DO_Y(1);
 			if (input.match("11")) ACTION_DO_Y(0);
-			if (consume_x) {
-				if (input.match(" *")) ACTION_DO_Y(0);
-				if (input.match("* ")) ACTION_DO_Y(0);
-			}
+			if (consume_x_rule(input.match(" *"))) ACTION_DO_Y(0);
+			if (consume_x_rule(input.match("* "))) ACTION_DO_Y(0);
 		}
 
 		if (cell->type == ID($_MUX_)) {
@@ -1338,7 +1341,7 @@ skip_fine_alu:
 			goto next_cell;
 		}
 
-		if (consume_x)
+		if (consume_x || may_consume_x != nullptr)
 		{
 			bool identity_wrt_a = false;
 			bool identity_wrt_b = false;
@@ -1398,7 +1401,7 @@ skip_fine_alu:
 					identity_wrt_a = true;
 			}
 
-			if (identity_wrt_a || identity_wrt_b)
+			if (consume_x_rule(identity_wrt_a || identity_wrt_b))
 			{
 				log_debug("Replacing %s cell `%s' in module `%s' with identity for port %c.\n",
 					cell->type, cell->name, module->name, identity_wrt_a ? 'A' : 'B');
@@ -1471,7 +1474,7 @@ skip_identity:
 			goto next_cell;
 		}
 
-		if (consume_x && config.mux_bool && cell->type.in(ID($mux), ID($_MUX_)) && cell->getPort(ID::A) == State::S0) {
+		if (consume_x_rule(config.mux_bool && cell->type.in(ID($mux), ID($_MUX_)) && cell->getPort(ID::A) == State::S0)) {
 			log_debug("Replacing %s cell `%s' in module `%s' with and-gate.\n", cell->type.unescape(), cell, module);
 			cell->setPort(ID::A, cell->getPort(ID::S));
 			cell->unsetPort(ID::S);
@@ -1490,7 +1493,7 @@ skip_identity:
 			goto next_cell;
 		}
 
-		if (consume_x && config.mux_bool && cell->type.in(ID($mux), ID($_MUX_)) && cell->getPort(ID::B) == State::S1) {
+		if (consume_x_rule(config.mux_bool && cell->type.in(ID($mux), ID($_MUX_)) && cell->getPort(ID::B) == State::S1)) {
 			log_debug("Replacing %s cell `%s' in module `%s' with or-gate.\n", cell->type.unescape(), cell, module);
 			cell->setPort(ID::B, cell->getPort(ID::S));
 			cell->unsetPort(ID::S);
@@ -2296,13 +2299,16 @@ void OptExprWorker::run(RTLIL::Module *mod)
 	}
 
 	do {
+		// The final ordinary pass scans every selected cell after reported
+		// rewrites settle, so it finds every remaining consume-X-only rule.
+		bool may_consume_x = false;
 		do {
 			did_something = false;
-			replace_const_cells(false /* consume_x */);
+			replace_const_cells(false /* consume_x */, config.keepdc ? nullptr : &may_consume_x);
 			if (did_something)
 				design->scratchpad_set_bool("opt.did_something", true);
 		} while (did_something);
-		if (!config.keepdc)
+		if (!config.keepdc && may_consume_x)
 			replace_const_cells(true /* consume_x */);
 		if (did_something)
 			design->scratchpad_set_bool("opt.did_something", true);
