@@ -419,6 +419,22 @@ namespace RTLIL {
 		EXPECT_FALSE(Const().is_onehot(&pos));
 	}
 
+	TEST_F(KernelRtlilTest, StrpoolAttribute) {
+		AttrObject object;
+		const IdString id = ID::src;
+
+		EXPECT_TRUE(object.get_strpool_attribute(id).empty());
+
+		object.attributes[id] = Const(std::string("alpha||beta|alpha"));
+		EXPECT_EQ(object.get_strpool_attribute(id), pool<std::string>({"alpha", "beta"}));
+
+		object.attributes[id] = Const(std::string("alpha\0beta|gamma", 16));
+		EXPECT_EQ(object.get_strpool_attribute(id), pool<std::string>({"alpha", "beta", "gamma"}));
+
+		object.attributes[id] = Const(std::string("\0|", 2));
+		EXPECT_TRUE(object.get_strpool_attribute(id).empty());
+	}
+
 	TEST_F(KernelRtlilTest, LookupAutoidxId) {
 		TwinePool twines;
 		IdString id = twines.add(NEW_ID);

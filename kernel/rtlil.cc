@@ -827,9 +827,19 @@ size_t RTLIL::Design::gc_twines()
 pool<string> RTLIL::AttrObject::get_strpool_attribute(RTLIL::IdString id) const
 {
 	pool<string> data;
-	if (attributes.count(id) != 0)
-		for (auto s : split_tokens(get_string_attribute(id), "|"))
-			data.insert(s);
+	const auto it = attributes.find(id);
+	if (it == attributes.end())
+		return data;
+
+	const std::string value = it->second.decode_string();
+	size_t token_begin = 0;
+	for (size_t pos = 0; pos <= value.size(); pos++) {
+		if (pos != value.size() && value[pos] != '|' && value[pos] != '\0')
+			continue;
+		if (pos != token_begin)
+			data.insert(value.substr(token_begin, pos - token_begin));
+		token_begin = pos + 1;
+	}
 	return data;
 }
 
