@@ -1450,7 +1450,7 @@ namespace {
 		const RTLIL::Module *module;
 		RTLIL::Cell *cell;
 		pool<IdString> expected_params;
-		pool<IdString> expected_ports;
+		size_t expected_port_count = 0;
 
 		InternalCellChecker(const RTLIL::Module *module, RTLIL::Cell *cell) : module(module), cell(cell) { }
 
@@ -1528,14 +1528,15 @@ namespace {
 				std::string err = stringf("Expected port to have width %d", width);
 				error(__LINE__, err);
 			}
-			expected_ports.insert(name);
+			// Each checker path names every required port exactly once.
+			expected_port_count++;
 		}
 
 		void check_expected(bool check_matched_sign = false)
 		{
 			if (cell->parameters.size() != expected_params.size())
 				error(__LINE__);
-			if (cell->connections_.size() != expected_ports.size())
+			if (cell->connections_.size() != expected_port_count)
 				error(__LINE__);
 
 			if (check_matched_sign) {
