@@ -5445,6 +5445,11 @@ bool RTLIL::SigSpec::operator ==(const RTLIL::SigSpec &other) const
 	if (size() != other.size())
 		return false;
 
+	if (rep_ == CHUNK && other.rep_ == CHUNK)
+		return chunk_ == other.chunk_;
+	if (rep_ == BITS && other.rep_ == BITS)
+		return bits_ == other.bits_;
+
 	auto other_it = other.chunks().begin();
 	for (const SigChunk &c : chunks()) {
 		if (c != *other_it)
