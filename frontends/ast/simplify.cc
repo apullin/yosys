@@ -1260,8 +1260,11 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	// activate const folding if this is anything that must be evaluated statically (ranges, parameters, attributes, etc.)
 	if (type == AST_WIRE || type == AST_PARAMETER || type == AST_LOCALPARAM || type == AST_ENUM_ITEM || type == AST_DEFPARAM || type == AST_PARASET || type == AST_RANGE || type == AST_PREFIX || type == AST_TYPEDEF)
 		const_fold = true;
-	if (type == AST_IDENTIFIER && current_scope.count(str) > 0 && (current_scope[str]->type == AST_PARAMETER || current_scope[str]->type == AST_LOCALPARAM || current_scope[str]->type == AST_ENUM_ITEM))
-		const_fold = true;
+	if (type == AST_IDENTIFIER) {
+		auto scope_it = current_scope.find(str);
+		if (scope_it != current_scope.end() && (scope_it->second->type == AST_PARAMETER || scope_it->second->type == AST_LOCALPARAM || scope_it->second->type == AST_ENUM_ITEM))
+			const_fold = true;
+	}
 
 	// create name resolution entries for all objects with names
 	// also merge multiple declarations for the same wire (e.g. "output foobar; reg foobar;")
@@ -2448,16 +2451,18 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 
 	if (type == AST_IDENTIFIER && !basic_prep) {
 		// check if a plausible struct member sss.mmmm
-		if (!str.empty() && str[0] == '\\' && current_scope.count(str)) {
-			auto item_node = current_scope[str];
-			if (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT || item_node->type == AST_UNION) {
+		if (!str.empty() && str[0] == '\\') {
+			auto item_it = current_scope.find(str);
+			AstNode *item_node = item_it == current_scope.end() ? nullptr : item_it->second;
+			if (item_node != nullptr && (item_node->type == AST_STRUCT_ITEM || item_node->type == AST_STRUCT || item_node->type == AST_UNION)) {
 				// Traverse any hierarchical path until the full name for the referenced struct/union is found.
 				std::string sname;
 				bool found_sname = false;
 				for (std::string::size_type pos = 0; (pos = str.find('.', pos)) != std::string::npos; pos++) {
 					sname = str.substr(0, pos);
-					if (current_scope.count(sname)) {
-						auto stype = current_scope[sname]->type;
+					auto sname_it = current_scope.find(sname);
+					if (sname_it != current_scope.end()) {
+						auto stype = sname_it->second->type;
 						if (stype == AST_WIRE || stype == AST_PARAMETER || stype == AST_LOCALPARAM) {
 							found_sname = true;
 							break;
@@ -2488,7 +2493,11 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	}
 	// annotate identifiers using scope resolution and create auto-wires as needed
 	if (type == AST_IDENTIFIER) {
-		if (current_scope.count(str) == 0) {
+		AstNode *scope_node = nullptr;
+		auto scope_it = current_scope.find(str);
+		if (scope_it != current_scope.end())
+			scope_node = scope_it->second;
+		else {
 			AstNode *current_scope_ast = (current_ast_mod == nullptr) ? current_ast : current_ast_mod;
 			str = try_pop_module_prefix();
 			for (auto& node : current_scope_ast->children) {
@@ -2523,22 +2532,27 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 					break;
 				}
 			}
+			scope_it = current_scope.find(str);
+			if (scope_it != current_scope.end())
+				scope_node = scope_it->second;
 		}
-		if (current_scope.count(str) == 0) {
+		if (scope_node == nullptr) {
 			if (current_ast_mod == nullptr) {
 				input_error("Identifier `%s' is implicitly declared outside of a module.\n", str);
 			} else if (flag_autowire || str == "\\$global_clock") {
 				auto auto_wire = std::make_unique<AstNode>(location, AST_AUTOWIRE);
 				auto_wire->str = str;
-				current_scope[str] = auto_wire.get();
+				scope_node = auto_wire.get();
+				current_scope[str] = scope_node;
 				current_ast_mod->children.push_back(std::move(auto_wire));
 				did_something = true;
 			} else {
 				input_error("Identifier `%s' is implicitly declared and `default_nettype is set to none.\n", str);
 			}
 		}
-		if (id2ast != current_scope[str]) {
-			id2ast = current_scope[str];
+		log_assert(scope_node != nullptr);
+		if (id2ast != scope_node) {
+			id2ast = scope_node;
 			did_something = true;
 		}
 	}
@@ -3838,6 +3852,7 @@ skip_dynamic_range_lvalue_expansion:;
 	// replace function and task calls with the code from the function or task
 	if ((type == AST_FCALL || type == AST_TCALL) && !str.empty())
 	{
+		AstNode *decl = nullptr;
 		if (type == AST_FCALL)
 		{
 			if (str == "\\$initstate")
@@ -4266,9 +4281,10 @@ skip_dynamic_range_lvalue_expansion:;
 				goto apply_newNode;
 			}
 
-			if (current_scope.count(str) != 0 && current_scope[str]->type == AST_DPI_FUNCTION)
+			auto scope_it = current_scope.find(str);
+			if (scope_it != current_scope.end() && scope_it->second->type == AST_DPI_FUNCTION)
 			{
-				AstNode *dpi_decl = current_scope[str];
+				AstNode *dpi_decl = scope_it->second;
 
 				std::string rtype, fname;
 				std::vector<std::string> argtypes;
@@ -4295,10 +4311,13 @@ skip_dynamic_range_lvalue_expansion:;
 				goto apply_newNode;
 			}
 
-			if (current_scope.count(str) == 0)
+			if (scope_it == current_scope.end()) {
 				str = try_pop_module_prefix();
-			if (current_scope.count(str) == 0 || current_scope[str]->type != AST_FUNCTION)
+				scope_it = current_scope.find(str);
+			}
+			if (scope_it == current_scope.end() || scope_it->second->type != AST_FUNCTION)
 				input_error("Can't resolve function name `%s'.\n", str);
+			decl = scope_it->second;
 		}
 
 		if (type == AST_TCALL)
@@ -4349,10 +4368,14 @@ skip_dynamic_range_lvalue_expansion:;
 				goto apply_newNode;
 			}
 
-			if (current_scope.count(str) == 0)
+			auto scope_it = current_scope.find(str);
+			if (scope_it == current_scope.end()) {
 				str = try_pop_module_prefix();
-			if (current_scope.count(str) == 0 || current_scope[str]->type != AST_TASK)
+				scope_it = current_scope.find(str);
+			}
+			if (scope_it == current_scope.end() || scope_it->second->type != AST_TASK)
 				input_error("Can't resolve task name `%s'.\n", str);
+			decl = scope_it->second;
 		}
 
 
@@ -4360,7 +4383,7 @@ skip_dynamic_range_lvalue_expansion:;
 		sstr << str << "$func$" << RTLIL::encode_filename(*location.begin.filename) << ":" << location.begin.line << "$" << (autoidx++) << '.';
 		std::string prefix = sstr.str();
 
-		auto* decl = current_scope[str];
+		log_assert(decl != nullptr);
 		if (unevaluated_tern_branch && decl->is_recursive_function())
 			goto replace_fcall_later;
 		auto decl_clone = decl->clone();
@@ -4629,14 +4652,17 @@ replace_fcall_later:;
 		switch (type)
 		{
 		case AST_IDENTIFIER:
-			if (current_scope.count(str) > 0 && (current_scope[str]->type == AST_PARAMETER || current_scope[str]->type == AST_LOCALPARAM || current_scope[str]->type == AST_ENUM_ITEM)) {
-				if (current_scope[str]->children[0]->type == AST_CONSTANT) {
+		{
+			auto scope_it = current_scope.find(str);
+			if (scope_it != current_scope.end() && (scope_it->second->type == AST_PARAMETER || scope_it->second->type == AST_LOCALPARAM || scope_it->second->type == AST_ENUM_ITEM)) {
+				AstNode *scope_node = scope_it->second;
+				if (scope_node->children[0]->type == AST_CONSTANT) {
 					if (children.size() != 0 && children[0]->type == AST_RANGE && children[0]->range_valid) {
 						std::vector<RTLIL::State> data;
-						bool param_upto = current_scope[str]->range_valid && current_scope[str]->range_swapped;
-						int param_offset = current_scope[str]->range_valid ? current_scope[str]->range_right : 0;
-						int param_width = current_scope[str]->range_valid ? current_scope[str]->range_left - current_scope[str]->range_right + 1 :
-								GetSize(current_scope[str]->children[0]->bits);
+						bool param_upto = scope_node->range_valid && scope_node->range_swapped;
+						int param_offset = scope_node->range_valid ? scope_node->range_right : 0;
+						int param_width = scope_node->range_valid ? scope_node->range_left - scope_node->range_right + 1 :
+								GetSize(scope_node->children[0]->bits);
 						int tmp_range_left = children[0]->range_left, tmp_range_right = children[0]->range_right;
 						if (param_upto) {
 							tmp_range_left = (param_width + 2*param_offset) - children[0]->range_right - 1;
@@ -4648,19 +4674,20 @@ replace_fcall_later:;
 						for (int i = tmp_range_right; i <= tmp_range_left; i++) {
 							int index = i - param_offset;
 							if (0 <= index && index < param_width)
-								data.push_back(current_scope[str]->children[0]->bits[chunk_offset + index]);
+								data.push_back(scope_node->children[0]->bits[chunk_offset + index]);
 							else
 								data.push_back(RTLIL::State::Sx);
 						}
 						newNode = mkconst_bits(location, data, false);
 					} else
 					if (children.size() == 0)
-						newNode = current_scope[str]->children[0]->clone();
+						newNode = scope_node->children[0]->clone();
 				} else
-				if (current_scope[str]->children[0]->isConst())
-					newNode = current_scope[str]->children[0]->clone();
+				if (scope_node->children[0]->isConst())
+					newNode = scope_node->children[0]->clone();
 			}
 			break;
+		}
 		case AST_BIT_NOT:
 			if (children[0]->type == AST_CONSTANT) {
 				RTLIL::Const y = RTLIL::const_not(children[0]->bitsAsConst(width_hint, sign_hint), dummy_arg, sign_hint, false, width_hint);

@@ -1,0 +1,7 @@
+logger -expect error "Insufficient number of arguments in DPI function call\." 1
+read_verilog -sv <<EOT
+module top;
+  import "DPI-C" function int dpi_id(int value);
+  localparam int X = dpi_id();
+endmodule
+EOT
