@@ -1443,15 +1443,19 @@ public:
 		return p;
 	}
 
+	// Merge two sets whose indices are already known to be roots.
+	// Makes j the root of the merged set.
+	void imerge_roots(int i, int j)
+	{
+		if (i != j)
+			parents[i].set(j);
+	}
+
 	// Merge sets if the given indices belong to different sets.
 	// Makes ifind(j) the root of the merged set.
 	void imerge(int i, int j)
 	{
-		i = ifind(i);
-		j = ifind(j);
-
-		if (i != j)
-			parents[i].set(j);
+		imerge_roots(ifind(i), ifind(j));
 	}
 
 	void ipromote(int i)

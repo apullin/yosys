@@ -64,4 +64,26 @@ TEST(PoolHashTest, subset_collisions)
 	EXPECT_LT(collisions, 100);
 }
 
+TEST(MfpTest, merge_known_roots)
+{
+	mfp<int> sets;
+	int root_1 = sets.lookup(1);
+	int root_2 = sets.lookup(2);
+	sets.imerge_roots(root_1, root_2);
+
+	EXPECT_EQ(sets.find(1), 2);
+	EXPECT_EQ(sets.find(2), 2);
+
+	int root_3 = sets.lookup(3);
+	sets.imerge_roots(root_3, sets.lookup(1));
+
+	EXPECT_EQ(sets.find(1), 2);
+	EXPECT_EQ(sets.find(2), 2);
+	EXPECT_EQ(sets.find(3), 2);
+
+	int common_root = sets.lookup(1);
+	sets.imerge_roots(common_root, common_root);
+	EXPECT_EQ(sets.find(1), 2);
+}
+
 YOSYS_NAMESPACE_END

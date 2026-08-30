@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <limits>
 #include "kernel/rtlil.h"
+#include "kernel/sigtools.h"
 
 YOSYS_NAMESPACE_BEGIN
 
@@ -433,6 +434,52 @@ namespace RTLIL {
 		EXPECT_FALSE(id.starts_with("abcdefghijklmn"));
 		EXPECT_TRUE(id.starts_with("$auto$rtlilTest"));
 		EXPECT_FALSE(id.starts_with("$auto$rtlilX"));
+	}
+
+	TEST_F(KernelRtlilTest, SigMapCanonicalRepresentatives) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a));
+		Wire *b = mod->addWire(ID(b));
+		Wire *c = mod->addWire(ID(c));
+		Wire *d = mod->addWire("\\d");
+
+		SigMap sigmap;
+		sigmap.add(SigBit(a), SigBit(b));
+		EXPECT_EQ(sigmap(SigBit(a)), SigBit(b));
+
+		sigmap.add(SigBit(a), SigBit(c));
+		EXPECT_EQ(sigmap(SigBit(a)), SigBit(c));
+		EXPECT_EQ(sigmap(SigBit(b)), SigBit(c));
+
+		sigmap.add(SigBit(c), SigBit(State::S1));
+		EXPECT_EQ(sigmap(SigBit(a)), SigBit(State::S1));
+		EXPECT_EQ(sigmap(SigBit(c)), SigBit(State::S1));
+
+		SigMap reverse_constant;
+		reverse_constant.add(SigBit(State::S0), SigBit(d));
+		EXPECT_EQ(reverse_constant(SigBit(d)), SigBit(State::S0));
+	}
+
+	TEST_F(KernelRtlilTest, SigValMapPreservesMergedValues) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a));
+		Wire *b = mod->addWire(ID(b));
+
+		SigValMap<unsigned int> sigmap;
+		sigmap.addVal(SigBit(a), 1);
+		sigmap.addVal(SigBit(b), 2);
+		sigmap.add(SigBit(a), SigBit(b));
+
+		SigBit bit = SigBit(a);
+		EXPECT_EQ(sigmap.apply_and_get_value(bit), 3u);
+		EXPECT_EQ(bit, SigBit(b));
+
+		sigmap.add(SigBit(b), SigBit(State::S1));
+		bit = SigBit(a);
+		EXPECT_EQ(sigmap.apply_and_get_value(bit), 3u);
+		EXPECT_EQ(bit, SigBit(State::S1));
 	}
 
 	class WireRtlVsHdlIndexConversionTest :

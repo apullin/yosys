@@ -327,13 +327,10 @@ struct SigMap final : public SigMapView
 
 			if (bf.wire || bt.wire)
 			{
-				database.imerge(bfi, bti);
-
 				if (bf.wire == nullptr)
-					database.ipromote(bfi);
-
-				if (bt.wire == nullptr)
-					database.ipromote(bti);
+					database.imerge_roots(bti, bfi);
+				else
+					database.imerge_roots(bfi, bti);
 			}
 		}
 	}
@@ -423,11 +420,11 @@ struct SigValMap final : public SigMapView
 			const RTLIL::SigBit &bt = database[bti];
 			if (bf.wire == nullptr) {
 				// bf is constant so make it the canonical representative.
-				database.imerge(bti, bfi);
+				database.imerge_roots(bti, bfi);
 				merge_value(bt, bf);
 			} else {
 				// Make bt the canonical representative.
-				database.imerge(bfi, bti);
+				database.imerge_roots(bfi, bti);
 				merge_value(bf, bt);
 			}
 		}
