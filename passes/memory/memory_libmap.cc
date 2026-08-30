@@ -2248,8 +2248,11 @@ struct MemoryLibMapPass : public Pass {
 			if (module->has_processes_warn())
 				continue;
 
-			auto worker = std::make_unique<MapWorker>(module);
 			auto mems = Mem::get_selected_memories(module);
+			if (mems.empty())
+				continue;
+
+			auto worker = std::make_unique<MapWorker>(module);
 			for (auto &mem : mems)
 			{
 				MemMapping map(*worker, mem, lib, opts);

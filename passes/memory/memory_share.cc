@@ -474,6 +474,8 @@ struct MemoryShareWorker
 	void operator()(RTLIL::Module* module)
 	{
 		std::vector<Mem> memories = Mem::get_selected_memories(module);
+		if (memories.empty())
+			return;
 
 		this->module = module;
 		sigmap.set(module);

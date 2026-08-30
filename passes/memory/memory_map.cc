@@ -392,12 +392,12 @@ struct MemoryMapWorker
 		mem.remove();
 	}
 
-	void run()
+	void run(std::vector<Mem> &memories)
 	{
 		for (auto wire : module->wires())
 			wire_names.insert(wire->name.str());
 
-		for (auto &mem : Mem::get_selected_memories(module))
+		for (auto &mem : memories)
 			handle_memory(mem);
 	}
 };
@@ -504,13 +504,17 @@ struct MemoryMapPass : public Pass {
 			if (mod->has_processes_warn())
 				continue;
 
+			auto memories = Mem::get_selected_memories(mod);
+			if (memories.empty())
+				continue;
+
 			MemoryMapWorker worker(design, mod);
 			worker.attr_icase = attr_icase;
 			worker.attributes = attributes;
 			worker.rom_only = rom_only;
 			worker.keepdc = keepdc;
 			worker.formal = formal;
-			worker.run();
+			worker.run(memories);
 		}
 	}
 } MemoryMapPass;

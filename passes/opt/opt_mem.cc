@@ -55,9 +55,13 @@ struct OptMemPass : public Pass {
 			if (module->has_processes_warn())
 				continue;
 
+			auto memories = Mem::get_selected_memories(module);
+			if (memories.empty())
+				continue;
+
 			SigMap sigmap(module);
 			FfInitVals initvals(&sigmap, module);
-			for (auto &mem : Mem::get_selected_memories(module)) {
+			for (auto &mem : memories) {
 				std::vector<bool> always_0(mem.width, true);
 				std::vector<bool> always_1(mem.width, true);
 				bool changed = false;

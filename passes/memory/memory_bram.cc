@@ -1325,9 +1325,13 @@ struct MemoryBramPass : public Pass {
 		extra_args(args, argidx, design);
 
 		for (auto mod : design->selected_modules()) {
+			auto memories = Mem::get_selected_memories(mod);
+			if (memories.empty())
+				continue;
+
 			SigMap sigmap(mod);
 			FfInitVals initvals(&sigmap, mod);
-			for (auto &mem : Mem::get_selected_memories(mod))
+			for (auto &mem : memories)
 				handle_memory(mem, rules, &initvals);
 		}
 	}

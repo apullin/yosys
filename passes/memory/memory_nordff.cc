@@ -52,9 +52,20 @@ struct MemoryNordffPass : public Pass {
 
 		for (auto module : design->selected_modules())
 		{
+			auto memories = Mem::get_selected_memories(module);
+			if (memories.empty())
+				continue;
+			bool have_clocked_read_port = false;
+			for (auto &mem : memories)
+				for (auto &port : mem.rd_ports)
+					if (port.clk_enable)
+						have_clocked_read_port = true;
+			if (!have_clocked_read_port)
+				continue;
+
 			SigMap sigmap(module);
 			FfInitVals initvals(&sigmap, module);
-			for (auto &mem : Mem::get_selected_memories(module))
+			for (auto &mem : memories)
 			{
 				bool changed = false;
 				for (int i = 0; i < GetSize(mem.rd_ports); i++) {

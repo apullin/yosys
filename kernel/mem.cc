@@ -856,9 +856,10 @@ namespace {
 
 std::vector<Mem> Mem::get_all_memories(Module *module) {
 	std::vector<Mem> res;
-	MemIndex index(module);
-	for (auto it: module->memories) {
-		res.push_back(mem_from_memory(module, it.second, index));
+	if (!module->memories.empty()) {
+		MemIndex index(module);
+		for (auto it: module->memories)
+			res.push_back(mem_from_memory(module, it.second, index));
 	}
 	for (auto cell: module->cells()) {
 		if (cell->type.in(ID($mem), ID($mem_v2)))
@@ -869,12 +870,19 @@ std::vector<Mem> Mem::get_all_memories(Module *module) {
 
 std::vector<Mem> Mem::get_selected_memories(Module *module) {
 	std::vector<Mem> res;
-	MemIndex index(module);
-	for (auto it: module->memories) {
+	std::vector<RTLIL::Memory *> selected_memories;
+	for (auto it : module->memories) {
 		if (module->design->selected(module, it.second))
-			res.push_back(mem_from_memory(module, it.second, index));
+			selected_memories.push_back(it.second);
 	}
-	for (auto cell: module->selected_cells()) {
+	if (!selected_memories.empty()) {
+		MemIndex index(module);
+		for (auto memory : selected_memories)
+			res.push_back(mem_from_memory(module, memory, index));
+	}
+	for (auto cell : module->cells()) {
+		if (!module->design->selected(module, cell))
+			continue;
 		if (cell->type.in(ID($mem), ID($mem_v2)))
 			res.push_back(mem_from_cell(cell));
 	}
