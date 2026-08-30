@@ -1,0 +1,34 @@
+read_rtlil <<EOT
+module \top
+  wire input 1 \a
+  wire output 2 \gate_y
+  wire output 3 \buf_y
+
+  cell \public_type \public_cell
+  end
+  cell $__opaque $__opaque_cell
+  end
+  cell $paramodopaque $paramod_cell
+  end
+  cell $fmcombineopaque $fmcombine_cell
+  end
+  cell $verific$opaque $verific_cell
+  end
+  cell $array:opaque $array_cell
+  end
+  cell $extern:opaque $extern_cell
+  end
+
+  cell $_BUF_ $gate_cell
+    connect \A \a
+    connect \Y \gate_y
+  end
+  cell $buf $buf_cell
+    parameter \WIDTH 1
+    connect \A \a
+    connect \Y \buf_y
+  end
+end
+EOT
+
+check

@@ -1,0 +1,15 @@
+exec -q -expect-return 0 -- mkdir -p temp
+write_file temp/internal_cell_checker_unexpected_parameter.il <<EOT
+module \top
+  wire width 1 \a
+  wire width 1 \y
+  cell $buf \bad
+    parameter \WIDTH 1
+    parameter \EXTRA 0
+    connect \A \a
+    connect \Y \y
+  end
+end
+EOT
+
+exec -expect-return 1 -expect-stdout Found.error.in.internal.cell -- ${YOSYS} -Q -q temp/internal_cell_checker_unexpected_parameter.il 2>&1

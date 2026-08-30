@@ -1,0 +1,9 @@
+exec -q -expect-return 0 -- mkdir -p temp
+write_file temp/internal_cell_checker_paramod_near_miss.il <<EOT
+module \top
+  cell $parametric \bad
+  end
+end
+EOT
+
+exec -expect-return 1 -expect-stdout Found.error.in.internal.cell -- ${YOSYS} -Q -q temp/internal_cell_checker_paramod_near_miss.il 2>&1

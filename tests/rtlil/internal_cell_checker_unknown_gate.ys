@@ -1,0 +1,9 @@
+exec -q -expect-return 0 -- mkdir -p temp
+write_file temp/internal_cell_checker_unknown_gate.il <<EOT
+module \top
+  cell $_UNKNOWN_ \bad
+  end
+end
+EOT
+
+exec -expect-return 1 -expect-stdout Found.error.in.internal.cell -- ${YOSYS} -Q -q temp/internal_cell_checker_unknown_gate.il 2>&1

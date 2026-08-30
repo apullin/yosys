@@ -1471,7 +1471,7 @@ namespace {
 			}
 		}
 
-		int param(RTLIL::IdString name)
+		const RTLIL::Const &param_value(RTLIL::IdString name)
 		{
 			auto it = cell->parameters.find(name);
 			if (it == cell->parameters.end()) {
@@ -1479,13 +1479,19 @@ namespace {
 				error(__LINE__, err);
 			}
 			expected_params.insert(name);
-			return it->second.as_int();
+			return it->second;
+		}
+
+		int param(RTLIL::IdString name)
+		{
+			return param_value(name).as_int();
 		}
 
 		int param_bool(RTLIL::IdString name)
 		{
-			int v = param(name);
-			if (GetSize(cell->parameters.at(name)) > 32)
+			const RTLIL::Const &value = param_value(name);
+			int v = value.as_int();
+			if (GetSize(value) > 32)
 				error(__LINE__);
 			if (v != 0 && v != 1)
 				error(__LINE__);
@@ -1502,15 +1508,13 @@ namespace {
 
 		void param_bits(RTLIL::IdString name, int width)
 		{
-			param(name);
-			if (GetSize(cell->parameters.at(name)) != width)
+			if (GetSize(param_value(name)) != width)
 				error(__LINE__);
 		}
 
 		std::string param_string(RTLIL::IdString name)
 		{
-			param(name);
-			return cell->parameters.at(name).decode_string();
+			return param_value(name).decode_string();
 		}
 
 		void port(RTLIL::IdString name, int width)
@@ -1529,12 +1533,10 @@ namespace {
 
 		void check_expected(bool check_matched_sign = false)
 		{
-			for (auto &para : cell->parameters)
-				if (expected_params.count(para.first) == 0)
-					error(__LINE__);
-			for (auto &conn : cell->connections())
-				if (expected_ports.count(conn.first) == 0)
-					error(__LINE__);
+			if (cell->parameters.size() != expected_params.size())
+				error(__LINE__);
+			if (cell->connections_.size() != expected_ports.size())
+				error(__LINE__);
 
 			if (check_matched_sign) {
 				log_assert(expected_params.count(ID::A_SIGNED) != 0 && expected_params.count(ID::B_SIGNED) != 0);
@@ -1547,9 +1549,41 @@ namespace {
 
 		void check()
 		{
-			if (cell->type.isPublic() || cell->type.begins_with("$__") || cell->type.begins_with("$paramod") || cell->type.begins_with("$fmcombine") ||
-					cell->type.begins_with("$verific$") || cell->type.begins_with("$array:") || cell->type.begins_with("$extern:"))
+			if (cell->type.isPublic())
 				return;
+
+			// Static and ordinary leaf names can be dispatched without constructing
+			// a string or traversing the same Twine six times. Composite names keep
+			// the general prefix checks, including prefixes split across segments.
+			const TwineNode &node = cell->twines()[cell->type.ref()];
+			if (node.is_leaf()) {
+				std::string_view type = node.text();
+				if (type.size() >= 3 && type[0] == '$') {
+					switch (type[1]) {
+					case '_':
+						if (type[2] == '_') return;
+						break;
+					case 'a':
+						if (type[2] == 'r' && type.starts_with("$array:")) return;
+						break;
+					case 'e':
+						if (type[2] == 'x' && type.starts_with("$extern:")) return;
+						break;
+					case 'f':
+						if (type[2] == 'm' && type.starts_with("$fmcombine")) return;
+						break;
+					case 'p':
+						if (type[2] == 'a' && type.starts_with("$paramod")) return;
+						break;
+					case 'v':
+						if (type[2] == 'e' && type.starts_with("$verific$")) return;
+						break;
+					}
+				}
+			} else if (cell->type.begins_with("$__") || cell->type.begins_with("$paramod") || cell->type.begins_with("$fmcombine") ||
+					cell->type.begins_with("$verific$") || cell->type.begins_with("$array:") || cell->type.begins_with("$extern:")) {
+				return;
+			}
 
 			if (cell->type.in(ID($buf), ID($barrier))) {
 				port(ID::A, param(ID::WIDTH));
