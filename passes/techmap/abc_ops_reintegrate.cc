@@ -275,8 +275,11 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 
 	mapped_mod->fixup_ports();
 
+	dict<RTLIL::Wire*, RTLIL::Wire*> remapped_wires;
+	remapped_wires.reserve(mapped_mod->wires_size());
 	for (auto w : mapped_mod->wires()) {
 		auto nw = module->addWire(remap(w->name), GetSize(w));
+		remapped_wires[w] = nw;
 		nw->start_offset = w->start_offset;
 		// Remove all (* init *) since they only exist on $_DFF_[NP]_
 		w->attributes.erase(ID::init);
@@ -366,8 +369,8 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 			SigBit D = mapped_cell->getPort(ID::D);
 			SigBit Q = mapped_cell->getPort(ID::Q);
 			if (D.wire)
-				D.wire = module->wire(remap(D.wire->name));
-			Q.wire = module->wire(remap(Q.wire->name));
+				D.wire = remapped_wires.at(D.wire);
+			Q.wire = remapped_wires.at(Q.wire);
 			module->connect(Q, D);
 			continue;
 		}
@@ -387,7 +390,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 
 			if (!a_bit.wire) {
 				mapped_cell->setPort(ID::Y, module->addWire(NEW_ID));
-				RTLIL::Wire *wire = module->wire(remap(y_bit.wire->name));
+				RTLIL::Wire *wire = remapped_wires.at(y_bit.wire);
 				log_assert(wire);
 				module->connect(RTLIL::SigBit(wire, y_bit.offset), State::S1);
 			}
@@ -412,8 +415,8 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 					// If a driver couldn't be found (could be from PI or box CI)
 					// then implement using a LUT
 					RTLIL::Cell *cell = module->addLut(remap.name(stringf("$lut%s", mapped_cell->name)),
-							RTLIL::SigBit(module->wire(remap(a_bit.wire->name)), a_bit.offset),
-							RTLIL::SigBit(module->wire(remap(y_bit.wire->name)), y_bit.offset),
+							RTLIL::SigBit(remapped_wires.at(a_bit.wire), a_bit.offset),
+							RTLIL::SigBit(remapped_wires.at(y_bit.wire), y_bit.offset),
 							RTLIL::Const::from_string("01"));
 					bit2sinks[cell->getPort(ID::A)].push_back(cell);
 					cell_stats[ID($lut)]++;
@@ -439,7 +442,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 						continue;
 					//log_assert(c.width == 1);
 					if (c.wire)
-						c.wire = module->wire(remap(c.wire->name));
+						c.wire = remapped_wires.at(c.wire);
 					newsig.append(c);
 				}
 				cell->setPort(mapped_conn.first, newsig);
@@ -466,9 +469,9 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 				SigBit I = mapped_cell->getPort(ID(i));
 				SigBit O = mapped_cell->getPort(ID(o));
 				if (I.wire)
-					I.wire = module->wire(remap(I.wire->name));
+					I.wire = remapped_wires.at(I.wire);
 				log_assert(O.wire);
-				O.wire = module->wire(remap(O.wire->name));
+				O.wire = remapped_wires.at(O.wire);
 				module->connect(O, I);
 				continue;
 			}
@@ -509,7 +512,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 					old_q = existing_cell->getPort(port_name);
 				}
 				auto new_q = outputs[0];
-				new_q.wire = module->wire(remap(new_q.wire->name));
+				new_q.wire = remapped_wires.at(new_q.wire);
 				module->connect(old_q,  new_q);
 			}
 			else {
@@ -542,7 +545,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 						continue;
 					//log_assert(c.width == 1);
 					if (c.wire)
-						c.wire = module->wire(remap(c.wire->name));
+						c.wire = remapped_wires.at(c.wire);
 					newsig.append(c);
 				}
 
@@ -565,14 +568,14 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 		if (!conn.first.is_fully_const()) {
 			std::vector<RTLIL::SigChunk> chunks = conn.first.chunks();
 			for (auto &c : chunks)
-				c.wire = module->wire(remap(c.wire->name));
+				c.wire = remapped_wires.at(c.wire);
 			conn.first = std::move(chunks);
 		}
 		if (!conn.second.is_fully_const()) {
 			std::vector<RTLIL::SigChunk> chunks = conn.second.chunks();
 			for (auto &c : chunks)
 				if (c.wire)
-					c.wire = module->wire(remap(c.wire->name));
+					c.wire = remapped_wires.at(c.wire);
 			conn.second = std::move(chunks);
 		}
 		module->connect(conn);
@@ -592,7 +595,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 		log_assert(box);
 
 		// replace only the driven bit
-		RTLIL::Wire *remap_wire = module->wire(remap(wire_name));
+		RTLIL::Wire *remap_wire = remapped_wires.at(mapped_wire);
 		RTLIL::SigSpec port = box->getPort(target.port);
 		log_assert(target.offset < GetSize(port));
 		port[target.offset] = remap_wire;
@@ -605,7 +608,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 	for (auto &[wire_name, kept] : keptwires) {
 		RTLIL::Wire *mapped_wire = mapped_mod->wire(wire_name);
 		log_assert(mapped_wire);
-		RTLIL::Wire *remap_wire = module->wire(remap(wire_name));
+		RTLIL::Wire *remap_wire = remapped_wires.at(mapped_wire);
 		log_assert(remap_wire);
 
 		RTLIL::Wire *wire = module->wire(kept.wire);
@@ -623,7 +626,7 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 		RTLIL::Wire *wire = module->wire(port);
 		log_assert(wire);
 
-		RTLIL::Wire *remap_wire = module->wire(remap(mapped_wire->name));
+		RTLIL::Wire *remap_wire = remapped_wires.at(mapped_wire);
 		RTLIL::SigSpec signal(wire, remap_wire->start_offset-wire->start_offset, GetSize(remap_wire));
 		log_assert(GetSize(signal) >= GetSize(remap_wire));
 
@@ -674,8 +677,8 @@ void reintegrate(RTLIL::Module *module, bool dff_mode, bool stdcell_mode, std::s
 		RTLIL::SigBit y_bit = not_cell->getPort(ID::Y);
 		RTLIL::Const driver_mask;
 
-		a_bit.wire = module->wire(remap(a_bit.wire->name));
-		y_bit.wire = module->wire(remap(y_bit.wire->name));
+		a_bit.wire = remapped_wires.at(a_bit.wire);
+		y_bit.wire = remapped_wires.at(y_bit.wire);
 
 		auto jt = bit2sinks.find(a_bit);
 		if (jt == bit2sinks.end())
@@ -724,7 +727,7 @@ clone_lut:
 				y_bit,
 				driver_mask);
 		for (auto &bit : cell->connections_.at(ID::A)) {
-			bit.wire = module->wire(remap(bit.wire->name));
+			bit.wire = remapped_wires.at(bit.wire);
 			bit2sinks[bit].push_back(cell);
 		}
 	}
