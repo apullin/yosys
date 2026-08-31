@@ -337,9 +337,9 @@ PRIVATE_NAMESPACE_END
 
 YOSYS_NAMESPACE_BEGIN
 
-void rmunused_module_cells(Module *module, ParallelDispatchThreadPool::Subpool &subpool, CleanRunContext &clean_ctx)
+void rmunused_module_cells(Module *module, AnalysisContext &actx, CleanRunContext &clean_ctx)
 {
-	AnalysisContext actx(module, subpool);
+	auto &subpool = actx.subpool;
 
 	// Used for logging warnings only
 	SigMap wire_map = wire_sigmap(module);

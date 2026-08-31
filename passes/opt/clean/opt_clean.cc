@@ -25,6 +25,15 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
+void rmunused_module_signals_to_fixpoint(RTLIL::Module *module, ParallelDispatchThreadPool::Subpool &subpool, CleanRunContext &clean_ctx)
+{
+	while (true) {
+		AnalysisContext actx(module, subpool);
+		if (!rmunused_module_signals(module, actx, clean_ctx))
+			break;
+	}
+}
+
 void rmunused_module(RTLIL::Module *module, bool rminit, CleanRunContext &clean_ctx)
 {
 	if (clean_ctx.flags.verbose)
@@ -35,11 +44,19 @@ void rmunused_module(RTLIL::Module *module, bool rminit, CleanRunContext &clean_
 	int num_worker_threads = ThreadPool::work_pool_size(0, module->cells_size(), 10000);
 	ParallelDispatchThreadPool::Subpool subpool(clean_ctx.thread_pool, num_worker_threads);
 	remove_temporary_cells(module, subpool, clean_ctx.flags.verbose);
-	rmunused_module_cells(module, subpool, clean_ctx);
-	while (rmunused_module_signals(module, subpool, clean_ctx)) { }
+	bool removed_signals;
+	{
+		AnalysisContext initial_actx(module, subpool);
+		rmunused_module_cells(module, initial_actx, clean_ctx);
+		// Cell cleanup neither changes wire-to-wire connections nor deletes
+		// wires, so its SigMap remains valid for the first signal cleanup pass.
+		removed_signals = rmunused_module_signals(module, initial_actx, clean_ctx);
+	}
+	if (removed_signals)
+		rmunused_module_signals_to_fixpoint(module, subpool, clean_ctx);
 
 	if (rminit && rmunused_module_init(module, subpool, clean_ctx.flags.verbose))
-		while (rmunused_module_signals(module, subpool, clean_ctx)) { }
+		rmunused_module_signals_to_fixpoint(module, subpool, clean_ctx);
 }
 
 struct OptCleanPass : public Pass {

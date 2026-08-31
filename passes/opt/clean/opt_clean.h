@@ -83,8 +83,8 @@ public:
 };
 
 void remove_temporary_cells(RTLIL::Module *module, ParallelDispatchThreadPool::Subpool &subpool, bool verbose);
-void rmunused_module_cells(Module *module, ParallelDispatchThreadPool::Subpool &subpool, CleanRunContext &clean_ctx);
-bool rmunused_module_signals(RTLIL::Module *module, ParallelDispatchThreadPool::Subpool &subpool, CleanRunContext &clean_ctx);
+void rmunused_module_cells(Module *module, AnalysisContext &actx, CleanRunContext &clean_ctx);
+bool rmunused_module_signals(RTLIL::Module *module, AnalysisContext &actx, CleanRunContext &clean_ctx);
 bool rmunused_module_init(RTLIL::Module *module, ParallelDispatchThreadPool::Subpool &subpool, bool verbose);
 
 YOSYS_NAMESPACE_END
