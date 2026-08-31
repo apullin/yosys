@@ -4853,15 +4853,38 @@ void RTLIL::SigSpec::try_repack()
 Hasher::hash_t RTLIL::SigSpec::updhash() const
 {
 	Hasher h;
-	for (auto &c : chunks())
-		if (c.wire == NULL) {
-			for (auto &v : c.data)
+	if (rep_ == CHUNK) {
+		if (chunk_.width > 0 && chunk_.wire == NULL) {
+			for (auto &v : chunk_.data)
 				h.eat(v);
-		} else {
-			h.eat(c.wire->name.ref());
-			h.eat(c.offset);
-			h.eat(c.width);
+		} else if (chunk_.width > 0) {
+			h.eat(chunk_.wire->name.ref());
+			h.eat(chunk_.offset);
+			h.eat(chunk_.width);
 		}
+	} else {
+		int bit_index = 0;
+		int bits_size = GetSize(bits_);
+		while (bit_index < bits_size) {
+			const SigBit &bit = bits_[bit_index];
+			if (bit.wire == NULL) {
+				do {
+					h.eat(bits_[bit_index].data);
+					bit_index++;
+				} while (bit_index < bits_size && bits_[bit_index].wire == NULL);
+			} else {
+				int width = 1;
+				while (bit_index + width < bits_size &&
+						bits_[bit_index + width].wire == bit.wire &&
+						bits_[bit_index + width].offset == bit.offset + width)
+					width++;
+				h.eat(bit.wire->name.ref());
+				h.eat(bit.offset);
+				h.eat(width);
+				bit_index += width;
+			}
+		}
+	}
 	Hasher::hash_t result = h.yield();
 	if (result == 0)
 		result = 1;

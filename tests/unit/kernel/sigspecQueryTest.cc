@@ -99,6 +99,27 @@ namespace RTLIL {
 			auto chunks = sig.chunks();
 			return *chunks.begin();
 		}
+
+		Hasher::hash_t chunks_hash(const SigSpec &sig)
+		{
+			Hasher inner;
+			for (const SigChunk &chunk : sig.chunks()) {
+				if (chunk.wire == nullptr) {
+					for (State state : chunk.data)
+						inner.eat(state);
+				} else {
+					inner.eat(chunk.wire->name);
+					inner.eat(chunk.offset);
+					inner.eat(chunk.width);
+				}
+			}
+			Hasher::hash_t value = inner.yield();
+			if (value == 0)
+				value = 1;
+			Hasher outer;
+			outer.eat(value);
+			return outer.yield();
+		}
 	}
 
 	TEST_F(SigSpecRepTest, OneBitConversion)
@@ -250,6 +271,41 @@ namespace RTLIL {
 		EXPECT_DEATH((void)SigSpec(wire, 2, 4).as_wire(), "");
 		EXPECT_DEATH((void)corpus[corpus.size() - 2].as_chunk(), "");
 		EXPECT_DEATH((void)corpus.back().as_chunk(), "");
+	}
+
+	TEST_F(SigSpecRepTest, HashMatchesChunkView)
+	{
+		Wire *wire = m->addWire("$wire", 8);
+		Wire *other_wire = m->addWire("$other", 8);
+		std::vector<SigSpec> corpus;
+		corpus.emplace_back();
+
+		auto add_both_representations = [&](SigSpec sig) {
+			corpus.push_back(sig);
+			if (!sig.empty())
+				(void)sig[0];
+			corpus.push_back(std::move(sig));
+		};
+
+		add_both_representations(SigSpec(wire, 2, 4));
+		add_both_representations(SigSpec(Const(std::vector<State>{
+				State::S0, State::S1, State::Sx, State::Sz, State::Sa, State::Sm})));
+
+		corpus.emplace_back(std::vector<SigBit>{
+			SigBit(wire, 1), SigBit(wire, 2), SigBit(State::S0), SigBit(State::S1),
+			SigBit(wire, 5), SigBit(wire, 5), SigBit(wire, 4), SigBit(other_wire, 0),
+			SigBit(other_wire, 1), SigBit(State::Sx), SigBit(State::Sz)});
+		SigSpec malformed_empty(State::S1);
+		malformed_empty.chunk_.width = 0;
+		corpus.push_back(std::move(malformed_empty));
+
+		for (const SigSpec &sig : corpus)
+			EXPECT_EQ(sig.hash_into(Hasher()).yield(), chunks_hash(sig));
+
+		SigSpec changed(wire, 1, 4);
+		(void)changed.hash_into(Hasher());
+		changed[2] = State::Sx;
+		EXPECT_EQ(changed.hash_into(Hasher()).yield(), chunks_hash(changed));
 	}
 };
 

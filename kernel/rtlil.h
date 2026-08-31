@@ -786,6 +786,7 @@ private:
 	FRIEND_TEST(SigSpecRepTest, MixedEquality);
 	FRIEND_TEST(SigSpecRepTest, ConstantQueries);
 	FRIEND_TEST(SigSpecRepTest, ShapeQueries);
+	FRIEND_TEST(SigSpecRepTest, HashMatchesChunkView);
 	enum Representation : char {
 		CHUNK,
 		BITS,
