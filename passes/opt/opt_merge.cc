@@ -142,6 +142,53 @@ struct OptMergeThreadWorker
 		}
 	}
 
+	Hasher hash_mapped_sig(const RTLIL::SigSpec &sig, Hasher h) const
+	{
+		// Match assign_map(sig).hash_into(h) without materializing the mapped SigSpec.
+		Hasher mapped_hash;
+		RTLIL::SigBit run_start;
+		int run_width = 0;
+
+		auto flush_run = [&]() {
+			if (run_width == 0)
+				return;
+			mapped_hash.eat(run_start.wire->name.ref());
+			mapped_hash.eat(run_start.offset);
+			mapped_hash.eat(run_width);
+			run_width = 0;
+		};
+
+		for (const RTLIL::SigChunk &chunk : sig.chunks()) {
+			if (chunk.wire == nullptr) {
+				flush_run();
+				for (RTLIL::State bit : chunk.data)
+					mapped_hash.eat(bit);
+				continue;
+			}
+
+			for (int i = 0; i < chunk.width; i++) {
+				RTLIL::SigBit bit = assign_map(RTLIL::SigBit(chunk.wire, chunk.offset + i));
+				if (bit.wire == nullptr) {
+					flush_run();
+					mapped_hash.eat(bit.data);
+				} else if (run_width != 0 && bit.wire == run_start.wire && bit.offset == run_start.offset + run_width) {
+					run_width++;
+				} else {
+					flush_run();
+					run_start = bit;
+					run_width = 1;
+				}
+			}
+		}
+		flush_run();
+
+		Hasher::hash_t value = mapped_hash.yield();
+		if (value == 0)
+			value = 1;
+		h.eat(value);
+		return h;
+	}
+
 	Hasher hash_cell_inputs(const RTLIL::Cell *cell, Hasher h) const
 	{
 		// TODO: when implemented, use celltypes to match:
@@ -149,8 +196,8 @@ struct OptMergeThreadWorker
 		if (cell->type.in(ID($and), ID($or), ID($xor), ID($xnor), ID($add), ID($mul),
 				ID($logic_and), ID($logic_or), ID($_AND_), ID($_OR_), ID($_XOR_))) {
 			hashlib::commutative_hash comm;
-			comm.eat(assign_map(cell->getPort(ID::A)));
-			comm.eat(assign_map(cell->getPort(ID::B)));
+			comm.eat(hash_mapped_sig(cell->getPort(ID::A), Hasher()));
+			comm.eat(hash_mapped_sig(cell->getPort(ID::B), Hasher()));
 			h = comm.hash_into(h);
 		} else if (cell->type.in(ID($reduce_xor), ID($reduce_xnor))) {
 			SigSpec a = assign_map(cell->getPort(ID::A));
@@ -164,13 +211,15 @@ struct OptMergeThreadWorker
 			SigSpec sig_s = assign_map(cell->getPort(ID::S));
 			SigSpec sig_b = assign_map(cell->getPort(ID::B));
 			h = hash_pmux_in(sig_s, sig_b, h);
-			h = assign_map(cell->getPort(ID::A)).hash_into(h);
+			h = hash_mapped_sig(cell->getPort(ID::A), h);
 		} else {
 			hashlib::commutative_hash comm;
 			for (const auto& [port, sig] : cell->connections()) {
 				if (cell->output(port))
 					continue;
-				comm.eat(hash_pair(port, assign_map(sig)));
+				Hasher port_hash;
+				port_hash.eat(port);
+				comm.eat(hash_mapped_sig(sig, port_hash));
 			}
 			h = comm.hash_into(h);
 			if (cell->is_builtin_ff())
