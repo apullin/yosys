@@ -784,6 +784,8 @@ private:
 	friend class SigSpecRepTest;
 	FRIEND_TEST(SigSpecRepTest, Extract);
 	FRIEND_TEST(SigSpecRepTest, MixedEquality);
+	FRIEND_TEST(SigSpecRepTest, ConstantQueries);
+	FRIEND_TEST(SigSpecRepTest, ShapeQueries);
 	enum Representation : char {
 		CHUNK,
 		BITS,
@@ -2308,8 +2310,7 @@ inline const RTLIL::SigBit &RTLIL::SigSpecConstIterator::operator*() {
 
 inline RTLIL::SigBit::SigBit(const RTLIL::SigSpec &sig) {
 	log_assert(sig.size() == 1);
-	auto it = sig.chunks().begin();
-	*this = SigBit(*it);
+	*this = sig[0];
 }
 
 template<typename T>
