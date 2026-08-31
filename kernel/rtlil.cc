@@ -5460,13 +5460,24 @@ bool RTLIL::SigSpec::operator ==(const RTLIL::SigSpec &other) const
 	if (rep_ == BITS && other.rep_ == BITS)
 		return bits_ == other.bits_;
 
-	auto other_it = other.chunks().begin();
-	for (const SigChunk &c : chunks()) {
-		if (c != *other_it)
+	const RTLIL::SigChunk &chunk = rep_ == CHUNK ? chunk_ : other.chunk_;
+	const std::vector<RTLIL::SigBit> &bits = rep_ == BITS ? bits_ : other.bits_;
+	// A zero-width chunk is skipped by the chunks() view, even if malformed.
+	if (chunk.width == 0)
+		return true;
+	if (chunk.wire != nullptr) {
+		if (!chunk.data.empty())
 			return false;
-		++other_it;
+		for (int i = 0; i < chunk.width; i++)
+			if (bits[i].wire != chunk.wire || bits[i].offset != chunk.offset + i)
+				return false;
+	} else {
+		if (chunk.offset != 0 || GetSize(chunk.data) != chunk.width)
+			return false;
+		for (int i = 0; i < chunk.width; i++)
+			if (bits[i].wire != nullptr || bits[i].data != chunk.data[i])
+				return false;
 	}
-
 	return true;
 }
 

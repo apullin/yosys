@@ -783,6 +783,7 @@ struct RTLIL::SigSpec
 private:
 	friend class SigSpecRepTest;
 	FRIEND_TEST(SigSpecRepTest, Extract);
+	FRIEND_TEST(SigSpecRepTest, MixedEquality);
 	enum Representation : char {
 		CHUNK,
 		BITS,
