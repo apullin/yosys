@@ -435,6 +435,60 @@ namespace RTLIL {
 		EXPECT_TRUE(object.get_strpool_attribute(id).empty());
 	}
 
+	TEST_F(KernelRtlilTest, SelectedMembers) {
+		Module detached;
+		EXPECT_TRUE(detached.selected_wires().empty());
+		EXPECT_TRUE(detached.selected_cells().empty());
+		EXPECT_TRUE(detached.selected_memories().empty());
+		EXPECT_TRUE(detached.selected_processes().empty());
+
+		Design design;
+		Module *module = design.addModule(ID(test));
+		Wire *wire_a = module->addWire(ID(a));
+		module->addWire(ID(b));
+		Cell *cell_a = module->addCell(ID(c), ID($not));
+		module->addCell("\\d", ID($not));
+		Memory *memory_a = module->addMemory("\\memory_a");
+		module->addMemory("\\memory_b");
+		Process *process_a = module->addProcess("$process_a");
+		module->addProcess("$process_b");
+
+		EXPECT_EQ(module->selected_wires().size(), 2);
+		EXPECT_EQ(module->selected_cells().size(), 2);
+		EXPECT_EQ(module->selected_memories().size(), 2);
+		EXPECT_EQ(module->selected_processes().size(), 2);
+
+		design.push_empty_selection();
+		design.select(module, wire_a);
+		design.select(module, cell_a);
+		design.select(module, memory_a);
+		design.select(module, process_a);
+		EXPECT_EQ(module->selected_wires(), std::vector<Wire*>({wire_a}));
+		EXPECT_EQ(module->selected_cells(), std::vector<Cell*>({cell_a}));
+		EXPECT_EQ(module->selected_memories(), std::vector<Memory*>({memory_a}));
+		EXPECT_EQ(module->selected_processes(), std::vector<Process*>({process_a}));
+		design.pop_selection();
+
+		module->set_bool_attribute(ID::blackbox);
+		EXPECT_TRUE(module->selected_wires().empty());
+		EXPECT_TRUE(module->selected_cells().empty());
+		EXPECT_TRUE(module->selected_memories().empty());
+		EXPECT_TRUE(module->selected_processes().empty());
+
+		design.push_complete_selection();
+		EXPECT_EQ(module->selected_wires().size(), 2);
+		EXPECT_EQ(module->selected_cells().size(), 2);
+		EXPECT_EQ(module->selected_memories().size(), 2);
+		EXPECT_EQ(module->selected_processes().size(), 2);
+
+		Module *other = design.addModule("\\other");
+		design.selected_active_module = other->name.ref();
+		EXPECT_TRUE(module->selected_wires().empty());
+		EXPECT_TRUE(module->selected_cells().empty());
+		EXPECT_TRUE(module->selected_memories().empty());
+		EXPECT_TRUE(module->selected_processes().empty());
+	}
+
 	TEST_F(KernelRtlilTest, LookupAutoidxId) {
 		TwinePool twines;
 		IdString id = twines.add(NEW_ID);

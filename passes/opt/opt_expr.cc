@@ -431,9 +431,10 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 
 	assign_map.set(module);
 	dict<RTLIL::SigSpec, RTLIL::SigSpec> invert_map;
+	const bool whole_module_selected = design->selected_whole_module(module);
 
 	for (auto cell : module->cells()) {
-		if (design->selected(module, cell) && !cell->type.isPublic()) {
+		if ((whole_module_selected || design->selected(module, cell)) && !cell->type.isPublic()) {
 			if (cell->type.in(ID($_NOT_), ID($not), ID($logic_not)) &&
 					GetSize(cell->getPort(ID::A)) == 1 && GetSize(cell->getPort(ID::Y)) == 1)
 				invert_map[assign_map(cell->getPort(ID::Y))] = assign_map(cell->getPort(ID::A));
@@ -445,7 +446,7 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 
 	if (!config.noclkinv)
 	for (auto cell : module->cells())
-	if (design->selected(module, cell)) {
+	if (whole_module_selected || design->selected(module, cell)) {
 		if (cell->type.in(ID($dff), ID($dffe), ID($dffsr), ID($dffsre), ID($adff), ID($adffe), ID($aldff), ID($aldffe), ID($sdff), ID($sdffe), ID($sdffce), ID($fsm), ID($memrd), ID($memrd_v2), ID($memwr), ID($memwr_v2)))
 			handle_polarity_inv(cell, ID::CLK, ID::CLK_POLARITY, assign_map, invert_map);
 
@@ -525,7 +526,7 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 	dict<RTLIL::SigBit, Cell*> outbit_to_cell;
 
 	for (auto cell : module->cells())
-	if (design->selected(module, cell) && yosys_celltypes.cell_evaluable(cell->type)) {
+	if ((whole_module_selected || design->selected(module, cell)) && yosys_celltypes.cell_evaluable(cell->type)) {
 		for (auto &conn : cell->connections())
 		if (yosys_celltypes.cell_output(cell->type, conn.first))
 		for (auto bit : assign_map(conn.second))
@@ -534,7 +535,7 @@ void OptExprWorker::replace_const_cells(bool consume_x, bool *may_consume_x)
 	}
 
 	for (auto cell : module->cells())
-	if (design->selected(module, cell) && yosys_celltypes.cell_evaluable(cell->type)) {
+	if ((whole_module_selected || design->selected(module, cell)) && yosys_celltypes.cell_evaluable(cell->type)) {
 		const int r_index = cells.node(cell);
 		for (auto &conn : cell->connections())
 		if (yosys_celltypes.cell_input(cell->type, conn.first))

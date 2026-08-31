@@ -103,6 +103,7 @@ struct OptMergeThreadWorker
 	const FfInitVals &initvals;
 	const CellTypes &ct;
 	int workers;
+	const bool whole_module_selected;
 	bool mode_share_all;
 	bool mode_keepdc;
 
@@ -268,7 +269,8 @@ struct OptMergeThreadWorker
 			const SigMap &assign_map, const CellTypes &ct, int workers,
 			bool mode_share_all, bool mode_keepdc) :
 		module(module), assign_map(assign_map), initvals(initvals), ct(ct),
-		workers(workers), mode_share_all(mode_share_all), mode_keepdc(mode_keepdc)
+		workers(workers), whole_module_selected(module->is_selected_whole()),
+		mode_share_all(mode_share_all), mode_keepdc(mode_keepdc)
 	{
 	}
 
@@ -277,7 +279,7 @@ struct OptMergeThreadWorker
 		std::vector<std::vector<CellHash>> bucketed_cell_hashes(workers);
 		for (int cell_index = cell_range.begin; cell_index < cell_range.end; ++cell_index) {
 			const RTLIL::Cell *cell = module->cell_at(cell_index);
-			if (!module->selected(cell))
+			if (!whole_module_selected && !module->selected(cell))
 				continue;
 			if (cell->type.in(ID($meminit), ID($meminit_v2), ID($mem), ID($mem_v2))) {
 				// Ignore those for performance: meminit can have an excessively large port,

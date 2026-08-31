@@ -2759,8 +2759,11 @@ std::vector<RTLIL::Wire*> RTLIL::Module::selected_wires() const
 {
 	std::vector<RTLIL::Wire*> result;
 	result.reserve(wires_.size());
+	if (wires_.empty())
+		return result;
+	const bool whole_module_selected = is_selected_whole();
 	for (auto &it : wires_)
-		if (design->selected(this, it.second))
+		if (whole_module_selected || design->selected(this, it.second))
 			result.push_back(it.second);
 	return result;
 }
@@ -2769,8 +2772,11 @@ std::vector<RTLIL::Cell*> RTLIL::Module::selected_cells() const
 {
 	std::vector<RTLIL::Cell*> result;
 	result.reserve(cells_.size());
+	if (cells_.empty())
+		return result;
+	const bool whole_module_selected = is_selected_whole();
 	for (auto &it : cells_)
-		if (design->selected(this, it.second))
+		if (whole_module_selected || design->selected(this, it.second))
 			result.push_back(it.second);
 	return result;
 }
@@ -2779,8 +2785,11 @@ std::vector<RTLIL::Memory*> RTLIL::Module::selected_memories() const
 {
 	std::vector<RTLIL::Memory*> result;
 	result.reserve(memories.size());
+	if (memories.empty())
+		return result;
+	const bool whole_module_selected = is_selected_whole();
 	for (auto &it : memories)
-		if (design->selected(this, it.second))
+		if (whole_module_selected || design->selected(this, it.second))
 			result.push_back(it.second);
 	return result;
 }
@@ -2789,8 +2798,11 @@ std::vector<RTLIL::Process*> RTLIL::Module::selected_processes() const
 {
 	std::vector<RTLIL::Process*> result;
 	result.reserve(processes.size());
+	if (processes.empty())
+		return result;
+	const bool whole_module_selected = is_selected_whole();
 	for (auto &it : processes)
-		if (design->selected(this, it.second))
+		if (whole_module_selected || design->selected(this, it.second))
 			result.push_back(it.second);
 	return result;
 }
