@@ -286,13 +286,13 @@ struct SynthGowinPass : public ScriptPass
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("share");
 
 			if (help_mode) {
@@ -308,9 +308,9 @@ struct SynthGowinPass : public ScriptPass
 			}
 
 			run("alumacc");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap" + no_rw_check_opt);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_ram"))
@@ -330,9 +330,9 @@ struct SynthGowinPass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_gates"))
@@ -342,7 +342,7 @@ struct SynthGowinPass : public ScriptPass
 			} else {
 				run("techmap -map +/techmap.v -map +/gowin/arith_map.v");
 			}
-			run("opt -fast");
+			run_nocheck("opt -fast");
 			if (!noiopads || help_mode)
 				run("iopadmap -bits -inpad IBUF O:I -outpad OBUF I:O "
 					"-toutpad TBUF ~OEN:I:O -tinoutpad IOBUF ~OEN:O:I:IO A:top", "(unless -noiopads)");
@@ -350,7 +350,7 @@ struct SynthGowinPass : public ScriptPass
 
 		if (check_label("map_ffs"))
 		{
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (family == "gw5a") {
 				if (strict_gw5a_dffs) {
 					run("dfflegalize -cell $_SDFFE_PP?P_ r -cell $_DFFE_PP?P_ r -cell $_DLATCH_?_ x -cell $_DLATCH_?P?_ x");
@@ -374,11 +374,11 @@ struct SynthGowinPass : public ScriptPass
 			run("sort");
 			run("read_verilog -icells -lib -specify +/abc9_model.v");
 			if (nowidelut) {
-				run("abc9 -maxlut 4 -W 500");
+				run_nocheck("abc9 -maxlut 4 -W 500");
 			} else if (!nowidelut) {
-				run("abc9 -maxlut 8 -W 500");
+				run_nocheck("abc9 -maxlut 8 -W 500");
 			}
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
@@ -390,7 +390,7 @@ struct SynthGowinPass : public ScriptPass
 			run("hilomap -singleton -hicell VCC V -locell GND G");
 			if (!vout_file.empty() || help_mode) // vendor output requires 1-bit wires
 				run("splitnets -ports", "(only if -vout)");
-			run("clean");
+			run_nocheck("clean");
 			run("autoname");
 		}
 

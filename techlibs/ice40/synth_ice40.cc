@@ -303,17 +303,17 @@ struct SynthIce40Pass : public ScriptPass
 		{
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("share");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=4");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (help_mode || dsp) {
 				run("memory_dff" + no_rw_check_opt); // ice40_dsp will merge registers, reserve memory port registers first
 				// give every product its own adder for the DSP post-adder
@@ -333,9 +333,9 @@ struct SynthIce40Pass : public ScriptPass
 				run("chtype -set $mul t:$__soft_mul", "(if -dsp)");
 			}
 			run("alumacc");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap" + no_rw_check_opt);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_ram"))
@@ -356,9 +356,9 @@ struct SynthIce40Pass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_gates"))
@@ -369,8 +369,8 @@ struct SynthIce40Pass : public ScriptPass
 				run("ice40_wrapcarry");
 				run("techmap -map +/techmap.v -map +/ice40/arith_map.v");
 			}
-			run("opt -fast");
-			run("ice40_opt");
+			run_nocheck("opt -fast");
+			run_nocheck("ice40_opt");
 		}
 
 		if (check_label("map_ffs"))
@@ -382,7 +382,7 @@ struct SynthIce40Pass : public ScriptPass
 			run("techmap -map +/ice40/ff_map.v");
 			run("opt_expr -mux_undef");
 			run("simplemap");
-			run("ice40_opt -full");
+			run_nocheck("ice40_opt -full");
 		}
 
 		if (check_label("map_luts"))
@@ -411,7 +411,7 @@ struct SynthIce40Pass : public ScriptPass
 			}
 			run("ice40_wrapcarry -unwrap");
 			run("techmap -map +/ice40/ff_map.v");
-			run("clean");
+			run_nocheck("clean");
 			run("opt_lut -tech ice40");
 		}
 
@@ -421,7 +421,7 @@ struct SynthIce40Pass : public ScriptPass
 				run("techmap -map +/ice40/cells_map.v", "(skip if -vpr)");
 			else if (!vpr)
 				run("techmap -map +/ice40/cells_map.v");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check"))
@@ -437,7 +437,7 @@ struct SynthIce40Pass : public ScriptPass
 		{
 			if (!blif_file.empty() || help_mode) {
 				if (vpr || help_mode) {
-					run(stringf("opt_clean -purge"),
+					run_nocheck(stringf("opt_clean -purge"),
 							"                                 (vpr mode)");
 					run(stringf("write_blif -attr -cname -conn -param %s",
 							help_mode ? "<file-name>" : blif_file.c_str()),

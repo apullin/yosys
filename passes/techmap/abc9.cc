@@ -262,6 +262,7 @@ struct Abc9Pass : public ScriptPass
 		log_assert(design);
 		if (design->selected_modules().empty()) {
 			log_warning("No modules selected for ABC9 techmapping.\n");
+			design->check();
 			return;
 		}
 
@@ -304,7 +305,7 @@ struct Abc9Pass : public ScriptPass
 			else active_design->push_complete_selection();
 			run("wbflip");
 			run("techmap -autoproc -wb -map %$abc9 -map +/techmap.v A:abc9_flop");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt -nodffe -nosdff");
 			if (dff_mode || help_mode) {
 				if (!help_mode)
 					active_design->scratchpad_unset("abc9_ops.prep_dff_submod.did_something");
@@ -369,7 +370,7 @@ struct Abc9Pass : public ScriptPass
 				run("techmap -wb -map %$abc9 -map +/techmap.v");
 				if (xaiger == 1)
 					run("aigmap");
-				run("opt -purge");
+				run_nocheck("opt -purge");
 				run("design -stash $abc9_holes");
 				run("design -load $abc9");
 				run("design -delete $abc9");

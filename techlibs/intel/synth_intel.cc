@@ -230,16 +230,16 @@ struct SynthIntelPass : public ScriptPass {
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=4");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 
 			if (help_mode) {
 				run("techmap -map +mul2dsp.v [...]", "(unless -nodsp)");
@@ -255,9 +255,9 @@ struct SynthIntelPass : public ScriptPass {
 			} else {
 				run("alumacc");
 			}
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (!nobram && check_label("map_bram", "(skip if -nobram)")) {
@@ -273,12 +273,12 @@ struct SynthIntelPass : public ScriptPass {
 		}
 
 		if (check_label("map_ffram")) {
-			run("opt -fast -mux_undef -undriven -fine -full");
+			run_nocheck("opt -fast -mux_undef -undriven -fine -full");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 			run("techmap -map +/techmap.v");
-			run("opt -full");
-			run("clean -purge");
+			run_nocheck("opt -full");
+			run_nocheck("clean -purge");
 			run("setundef -undriven -zero");
 		}
 
@@ -288,18 +288,18 @@ struct SynthIntelPass : public ScriptPass {
 		}
 
 		if (check_label("map_luts")) {
-			run("abc9 -lut 4 -W 300" + string(dff ? " -dff" : ""));
-			run("clean");
-			run("opt -fast");
+			run_nocheck("abc9 -lut 4 -W 300" + string(dff ? " -dff" : ""));
+			run_nocheck("clean");
+			run_nocheck("opt -fast");
 			run("autoname");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells")) {
 			if (iopads || help_mode)
 				run("iopadmap -bits -outpad $__outpad I:O -inpad $__inpad O:I A:top", "(if -iopads)");
 			run(stringf("techmap -map +/intel/%s/cells_map.v", family_opt));
-			run("clean -purge");
+			run_nocheck("clean -purge");
 		}
 
 		if (check_label("check")) {

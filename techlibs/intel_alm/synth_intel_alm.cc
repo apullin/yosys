@@ -211,17 +211,17 @@ struct SynthIntelALMPass : public ScriptPass {
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("share");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=6");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (help_mode) {
 				run("techmap -map +/mul2dsp.v [...]", "(unless -nodsp)");
 			} else if (!nodsp) {
@@ -240,9 +240,9 @@ struct SynthIntelALMPass : public ScriptPass {
 			if (!noiopad)
 				run("iopadmap -bits -outpad MISTRAL_OB I:PAD -inpad MISTRAL_IB O:PAD -toutpad MISTRAL_IO OE:O:PAD -tinoutpad MISTRAL_IO OE:O:I:PAD A:top", "(unless -noiopad)");
 			run("techmap -map +/intel_alm/common/arith_alm_map.v -map +/intel_alm/common/dsp_map.v");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (!nobram && check_label("map_bram", "(skip if -nobram)")) {
@@ -256,7 +256,7 @@ struct SynthIntelALMPass : public ScriptPass {
 
 		if (check_label("map_ffram")) {
 			run("memory_map");
-			run("opt -full");
+			run_nocheck("opt -full");
 		}
 
 		if (check_label("map_ffs")) {
@@ -264,20 +264,20 @@ struct SynthIntelALMPass : public ScriptPass {
 			run("techmap");
 			run("dfflegalize -cell $_DFFE_PN0P_ 0 -cell $_SDFFCE_PP0P_ 0");
 			run("techmap -map +/intel_alm/common/dff_map.v");
-			run("opt -full -undriven -mux_undef");
-			run("clean -purge");
+			run_nocheck("opt -full -undriven -mux_undef");
+			run_nocheck("clean -purge");
 			if (!noclkbuf)
 				run("clkbufmap -buf MISTRAL_CLKBUF Q:A", "(unless -noclkbuf)");
 		}
 
 		if (check_label("map_luts")) {
 			run("techmap -map +/intel_alm/common/abc9_map.v");
-			run(stringf("abc9 %s -maxlut 6 -W 600", help_mode ? "[-dff]" : dff ? "-dff" : ""));
+			run_nocheck(stringf("abc9 %s -maxlut 6 -W 600", help_mode ? "[-dff]" : dff ? "-dff" : ""));
 			run("techmap -map +/intel_alm/common/abc9_unmap.v");
 			run("techmap -map +/intel_alm/common/alm_map.v");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 			run("autoname");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check")) {

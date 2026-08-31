@@ -473,19 +473,19 @@ struct SynthLatticePass : public ScriptPass
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("share");
 			if (cmp2softlogic)
 				run("techmap -map +/cmp2softlogic.v");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=4");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 
 			if (help_mode) {
 				// give every product its own adder for the DSP post-adder
@@ -513,9 +513,9 @@ struct SynthLatticePass : public ScriptPass
 			if (family == "xo3" || help_mode)
 				run("booth", "(only if '-family xo3')");
 			run("alumacc");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap" + no_rw_check_opt);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_ram"))
@@ -540,9 +540,9 @@ struct SynthLatticePass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine -mux_undef");
+			run_nocheck("opt -undriven -fine -mux_undef");
 		}
 
 		if (check_label("map_gates"))
@@ -556,12 +556,12 @@ struct SynthLatticePass : public ScriptPass
 				run("attrmvcp -attr src -attr LOC t:OB %x:+[O] t:OBZ %x:+[O] t:BB %x:+[B]");
 				run("attrmvcp -attr src -attr LOC -driven t:IB %x:+[I]");
 			}
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_ffs"))
 		{
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (!is_nexus) {
 				std::string dfflegalize_args = " -cell $_DFF_?_ 01 -cell $_DFF_?P?_ r -cell $_SDFF_?P?_ r";
 				if (help_mode) {
@@ -594,7 +594,7 @@ struct SynthLatticePass : public ScriptPass
 			run("simplemap");
 			if (!is_nexus) run("lattice_gsr");
 			run("attrmvcp -copy -attr syn_useioff");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_luts"))
@@ -616,7 +616,7 @@ struct SynthLatticePass : public ScriptPass
 			if (dff)
 				abc9_opts += " -dff";
 			run("abc9" + abc9_opts);
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
@@ -629,7 +629,7 @@ struct SynthLatticePass : public ScriptPass
 			} else {
 				run("opt_lut_ins -tech lattice");
 			}
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check"))
