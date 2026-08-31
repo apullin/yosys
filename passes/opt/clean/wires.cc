@@ -36,6 +36,30 @@ struct ShardedSigBitEquality {
 };
 using ShardedSigPool = ShardedHashtable<ShardedSigBit, ShardedSigBitEquality, SetCollisionHandler<ShardedSigBit>>;
 
+struct ShardedSigConnKinds {
+	static constexpr uint8_t REGISTER = 1 << 0;
+	static constexpr uint8_t CELL_CONNECTED = 1 << 1;
+
+	using Accumulated = ShardedSigConnKinds;
+	RTLIL::Wire *wire = nullptr;
+	int offset = 0;
+	uint8_t kinds = 0;
+	ShardedSigConnKinds() = default;
+	ShardedSigConnKinds(const RTLIL::SigBit &bit, uint8_t kinds) : wire(bit.wire), offset(bit.offset), kinds(kinds) {}
+};
+static_assert(sizeof(void *) != 8 || sizeof(ShardedSigConnKinds) == sizeof(RTLIL::SigBit));
+struct ShardedSigConnKindsEquality {
+	bool operator()(const ShardedSigConnKinds &b1, const ShardedSigConnKinds &b2) const {
+		return b1.wire == b2.wire && b1.offset == b2.offset;
+	}
+};
+struct ShardedSigConnKindsCollisionHandler {
+	void operator()(ShardedSigConnKinds &incumbent, ShardedSigConnKinds &new_value) const {
+		incumbent.kinds |= new_value.kinds;
+	}
+};
+using ShardedSigConnKindsTable = ShardedHashtable<ShardedSigConnKinds, ShardedSigConnKindsEquality, ShardedSigConnKindsCollisionHandler>;
+
 struct ShardedWire {
 	using Accumulated = ShardedWire;
 	RTLIL::Wire *wire = nullptr;
@@ -115,7 +139,7 @@ int count_nontrivial_wire_attrs(RTLIL::Wire *w)
 }
 
 // Should we pick `s2` over `s1` to represent a signal?
-bool compare_signals(const RTLIL::SigBit &s1, const RTLIL::SigBit &s2, const ShardedSigPool &regs, const ShardedSigPool &conns, ExactCellWires &cell_wires)
+bool compare_signals(const RTLIL::SigBit &s1, const RTLIL::SigBit &s2, const ShardedSigConnKindsTable &conn_kinds, ExactCellWires &cell_wires)
 {
 	if (s1 == s2)
 		return false;
@@ -133,18 +157,22 @@ bool compare_signals(const RTLIL::SigBit &s1, const RTLIL::SigBit &s2, const Sha
 		return !(w2->port_input && w2->port_output);
 
 	if (w1->name.isPublic() && w2->name.isPublic()) {
-		ShardedSigPool::AccumulatedValue s1_val = {s1, s1.hash_top().yield()};
-		ShardedSigPool::AccumulatedValue s2_val = {s2, s2.hash_top().yield()};
-		bool regs1 = regs.find(s1_val) != nullptr;
-		bool regs2 = regs.find(s2_val) != nullptr;
+		ShardedSigConnKindsTable::AccumulatedValue s1_val = {{s1, 0}, s1.hash_top().yield()};
+		ShardedSigConnKindsTable::AccumulatedValue s2_val = {{s2, 0}, s2.hash_top().yield()};
+		const ShardedSigConnKinds *s1_kinds = conn_kinds.find(s1_val);
+		const ShardedSigConnKinds *s2_kinds = conn_kinds.find(s2_val);
+		uint8_t kinds1 = s1_kinds == nullptr ? 0 : s1_kinds->kinds;
+		uint8_t kinds2 = s2_kinds == nullptr ? 0 : s2_kinds->kinds;
+		bool regs1 = (kinds1 & ShardedSigConnKinds::REGISTER) != 0;
+		bool regs2 = (kinds2 & ShardedSigConnKinds::REGISTER) != 0;
 		if (regs1 != regs2)
 			return regs2;
 		bool w1_exact = cell_wires.is_exactly_cell_driven(w1);
 		bool w2_exact = cell_wires.is_exactly_cell_driven(w2);
 		if (w1_exact != w2_exact)
 			return w2_exact;
-		bool conns1 = conns.find(s1_val) != nullptr;
-		bool conns2 = conns.find(s2_val) != nullptr;
+		bool conns1 = (kinds1 & ShardedSigConnKinds::CELL_CONNECTED) != 0;
+		bool conns2 = (kinds2 & ShardedSigConnKinds::CELL_CONNECTED) != 0;
 		if (conns1 != conns2)
 			return conns2;
 	}
@@ -183,6 +211,12 @@ void add_spec(ShardedSigPool::Builder &builder, const ThreadIndex &thread, const
 	for (SigBit bit : spec)
 		if (bit.wire != nullptr)
 			builder.insert(thread, {bit, bit.hash_top().yield()});
+}
+
+void add_spec(ShardedSigConnKindsTable::Builder &builder, const ThreadIndex &thread, const RTLIL::SigSpec &spec, uint8_t kinds) {
+	for (SigBit bit : spec)
+		if (bit.wire != nullptr)
+			builder.insert(thread, {{bit, kinds}, bit.hash_top().yield()});
 }
 
 void add_wires(ShardedWirePool::Builder &builder, const ThreadIndex &thread, const RTLIL::SigSpec &spec) {
@@ -256,10 +290,9 @@ static InitBits consume_inits(ShardedVector<RTLIL::Wire*> &initialized_wires, co
  * What kinds of things are signals connected to?
  * Helps pick representatives out of groups of connected signals */
 struct SigConnKinds {
-	// Wire bits directly driven by registers (with clk2fflogic exception)
-	ShardedSigPool raw_registers;
-	// Wire bits directly connected to any cell port
-	ShardedSigPool raw_cell_connected;
+	// Flags for wire bits directly driven by registers (with clk2fflogic
+	// exception) and wire bits directly connected to any cell port.
+	ShardedSigConnKindsTable raw_conn_kinds;
 
 	// Signals exactly driven by a known cell output,
 	// this will influence only our choice of representatives.
@@ -270,54 +303,52 @@ struct SigConnKinds {
 	ShardedSigSpecPool exact_cells;
 
 	SigConnKinds(bool purge_mode, const AnalysisContext& actx, CleanRunContext& clean_ctx) {
-		ShardedSigPool::Builder raw_register_builder(actx.subpool);
-		ShardedSigPool::Builder raw_cell_connected_builder(actx.subpool);
+		ShardedSigConnKindsTable::Builder raw_conn_kinds_builder(actx.subpool);
 		ShardedWirePool::Builder exact_wire_builder(actx.subpool);
 		ShardedSigSpecPool::Builder exact_cell_output_builder(actx.subpool);
-		actx.subpool.run([&exact_wire_builder, &exact_cell_output_builder, &raw_register_builder, &raw_cell_connected_builder, purge_mode, &actx, &clean_ctx](const ParallelDispatchThreadPool::RunCtx &ctx) {
+		actx.subpool.run([&exact_wire_builder, &exact_cell_output_builder, &raw_conn_kinds_builder, purge_mode, &actx, &clean_ctx](const ParallelDispatchThreadPool::RunCtx &ctx) {
 
 			for (int i : ctx.item_range(actx.mod->cells_size())) {
 				RTLIL::Cell *cell = actx.mod->cell_at(i);
-				if (!purge_mode) {
-					if (clean_ctx.ct_reg(cell->type)) {
-						// Improve witness signal naming when clk2fflogic used
-						// see commit message e36c71b5
-						bool clk2fflogic = cell->get_bool_attribute(ID::clk2fflogic);
-						for (auto &[port, sig] : cell->connections())
-							if (clk2fflogic ? port == ID::D : clean_ctx.ct_all.cell_output(cell->type, port))
-								add_spec(raw_register_builder, ctx, sig);
+				bool known_cell = clean_ctx.ct_all.cell_known(cell->type);
+				if (purge_mode && !known_cell)
+					continue;
+				bool register_cell = !purge_mode && clean_ctx.ct_reg(cell->type);
+				// Improve witness signal naming when clk2fflogic is used; see e36c71b5.
+				bool clk2fflogic = register_cell && cell->get_bool_attribute(ID::clk2fflogic);
+				for (auto &[port, sig] : cell->connections()) {
+					bool output_port = (known_cell || (register_cell && !clk2fflogic)) &&
+						clean_ctx.ct_all.cell_output(cell->type, port);
+					if (!purge_mode) {
+						uint8_t kinds = ShardedSigConnKinds::CELL_CONNECTED;
+						if (register_cell && (clk2fflogic ? port == ID::D : output_port))
+							kinds |= ShardedSigConnKinds::REGISTER;
+						add_spec(raw_conn_kinds_builder, ctx, sig, kinds);
 					}
-					for (auto &[_, sig] : cell->connections())
-						add_spec(raw_cell_connected_builder, ctx, sig);
-				}
-				if (clean_ctx.ct_all.cell_known(cell->type))
-					for (auto &[port, sig] : cell->connections())
-						if (clean_ctx.ct_all.cell_output(cell->type, port)) {
-							RTLIL::SigSpec spec = actx.assign_map(sig);
-							if (spec.is_wire()) {
-								RTLIL::Wire *wire = spec.as_wire();
-								exact_wire_builder.insert(ctx, {wire, hash_wire(wire)});
-							} else {
-								unsigned int hash = spec.hash_into(Hasher()).yield();
-								exact_cell_output_builder.insert(ctx, {std::move(spec), hash});
-							}
+					if (known_cell && output_port) {
+						RTLIL::SigSpec spec = actx.assign_map(sig);
+						if (spec.is_wire()) {
+							RTLIL::Wire *wire = spec.as_wire();
+							exact_wire_builder.insert(ctx, {wire, hash_wire(wire)});
+						} else {
+							unsigned int hash = spec.hash_into(Hasher()).yield();
+							exact_cell_output_builder.insert(ctx, {std::move(spec), hash});
 						}
+					}
+				}
 			}
 		});
-		actx.subpool.run([&raw_register_builder, &raw_cell_connected_builder, &exact_wire_builder, &exact_cell_output_builder](const ParallelDispatchThreadPool::RunCtx &ctx) {
-			raw_register_builder.process(ctx);
-			raw_cell_connected_builder.process(ctx);
+		actx.subpool.run([&raw_conn_kinds_builder, &exact_wire_builder, &exact_cell_output_builder](const ParallelDispatchThreadPool::RunCtx &ctx) {
+			raw_conn_kinds_builder.process(ctx);
 			exact_wire_builder.process(ctx);
 			exact_cell_output_builder.process(ctx);
 		});
-		raw_registers = raw_register_builder;
-		raw_cell_connected = raw_cell_connected_builder;
+		raw_conn_kinds = raw_conn_kinds_builder;
 		exact_wires = exact_wire_builder;
 		exact_cells = exact_cell_output_builder;
 	}
 	void clear(const ParallelDispatchThreadPool::RunCtx &ctx) {
-		raw_registers.clear(ctx);
-		raw_cell_connected.clear(ctx);
+		raw_conn_kinds.clear(ctx);
 		exact_wires.clear(ctx);
 		exact_cells.clear(ctx);
 	}
@@ -337,7 +368,7 @@ ShardedVector<RTLIL::SigBit> build_candidates(ExactCellWires& cell_wires, const 
 			for (int j = 0; j < wire->width; ++j) {
 				RTLIL::SigBit s1(wire, j);
 				RTLIL::SigBit s2 = actx.assign_map(s1);
-				if (compare_signals(s2, s1, sig_analysis.raw_registers, sig_analysis.raw_cell_connected, *this_thread_cell_wires))
+				if (compare_signals(s2, s1, sig_analysis.raw_conn_kinds, *this_thread_cell_wires))
 					candidates.insert(ctx, s1);
 			}
 		}
@@ -351,7 +382,7 @@ void update_assign_map(SigMap& assign_map, ShardedVector<RTLIL::SigBit>& sigmap_
 		// Resolves if two threads in build_candidates found different candidates
 		// for the same set
 		// TODO adds effort for single-threaded?
-		if (compare_signals(current_canonical, candidate, sig_analysis.raw_registers, sig_analysis.raw_cell_connected, cell_wires))
+		if (compare_signals(current_canonical, candidate, sig_analysis.raw_conn_kinds, cell_wires))
 			assign_map.add(candidate);
 	}
 }
