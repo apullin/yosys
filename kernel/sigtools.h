@@ -317,10 +317,9 @@ struct SigMap final : public SigMapView
 	{
 		log_assert(GetSize(from) == GetSize(to));
 
-		for (int i = 0; i < GetSize(from); i++)
-		{
-			int bfi = database.lookup(from[i]);
-			int bti = database.lookup(to[i]);
+		from.for_each_bit_pair(to, [&](const RTLIL::SigBit &from_bit, const RTLIL::SigBit &to_bit) {
+			int bfi = database.lookup(from_bit);
+			int bti = database.lookup(to_bit);
 
 			const RTLIL::SigBit &bf = database[bfi];
 			const RTLIL::SigBit &bt = database[bti];
@@ -332,7 +331,7 @@ struct SigMap final : public SigMapView
 				else
 					database.imerge_roots(bfi, bti);
 			}
-		}
+		});
 	}
 
 	// Add sig as disconnected from anything
@@ -408,12 +407,11 @@ struct SigValMap final : public SigMapView
 	{
 		log_assert(GetSize(from) == GetSize(to));
 
-		for (int i = 0; i < GetSize(from); i++)
-		{
-			int bfi = database.lookup(from[i]);
-			int bti = database.lookup(to[i]);
+		from.for_each_bit_pair(to, [&](const RTLIL::SigBit &from_bit, const RTLIL::SigBit &to_bit) {
+			int bfi = database.lookup(from_bit);
+			int bti = database.lookup(to_bit);
 			if (bfi == bti) {
-				continue;
+				return;
 			}
 
 			const RTLIL::SigBit &bf = database[bfi];
@@ -427,7 +425,7 @@ struct SigValMap final : public SigMapView
 				database.imerge_roots(bfi, bti);
 				merge_value(bf, bt);
 			}
-		}
+		});
 	}
 
 	void addVal(const RTLIL::SigBit &bit, const Val &val)

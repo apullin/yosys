@@ -452,6 +452,77 @@ namespace RTLIL {
 		EXPECT_FALSE(id.starts_with("$auto$rtlilX"));
 	}
 
+	TEST_F(KernelRtlilTest, SigSpecForEachBitPair) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a), 6);
+		Wire *b = mod->addWire(ID(b), 6);
+
+		SigSpec chunk_a(a, 1, 4);
+		SigSpec chunk_b(b, 2, 4);
+		SigSpec bits_a(std::vector<SigBit>{SigBit(a, 5), SigBit(State::S0), SigBit(a, 0), SigBit(State::S1)});
+		SigSpec bits_b(std::vector<SigBit>{SigBit(b, 1), SigBit(b, 5), SigBit(State::Sx), SigBit(b, 0)});
+		SigSpec const_chunk(Const(std::vector<State>{State::S1, State::S0, State::Sx, State::Sz}));
+
+		auto expect_pairs = [](const SigSpec &from, const SigSpec &to) {
+			std::vector<std::pair<SigBit, SigBit>> pairs;
+			from.for_each_bit_pair(to, [&](const SigBit &from_bit, const SigBit &to_bit) {
+				pairs.emplace_back(from_bit, to_bit);
+			});
+			ASSERT_EQ(GetSize(pairs), GetSize(from));
+			for (int i = 0; i < GetSize(pairs); i++) {
+				EXPECT_EQ(pairs[i].first, from[i]);
+				EXPECT_EQ(pairs[i].second, to[i]);
+			}
+		};
+
+		expect_pairs(chunk_a, chunk_b);
+		expect_pairs(chunk_a, bits_b);
+		expect_pairs(bits_a, chunk_b);
+		expect_pairs(bits_a, bits_b);
+		expect_pairs(chunk_a, const_chunk);
+		expect_pairs(bits_a, const_chunk);
+		expect_pairs(const_chunk, chunk_b);
+		expect_pairs(const_chunk, bits_b);
+		expect_pairs(const_chunk, SigSpec(Const(std::vector<State>{State::Sz, State::Sx, State::S0, State::S1})));
+
+		bool visited = false;
+		SigSpec().for_each_bit_pair(SigSpec(), [&](const SigBit &, const SigBit &) { visited = true; });
+		EXPECT_FALSE(visited);
+	}
+
+	TEST_F(KernelRtlilTest, SigMapVectorConnections) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a), 4);
+		Wire *b = mod->addWire(ID(b), 4);
+
+		SigSpec from(a);
+		SigSpec to(std::vector<SigBit>{SigBit(b, 2), SigBit(State::S0), SigBit(b, 0), SigBit(State::S1)});
+		SigMap sigmap;
+		sigmap.add(from, to);
+		for (int i = 0; i < GetSize(from); i++)
+			EXPECT_EQ(sigmap(from[i]), to[i]);
+	}
+
+	TEST_F(KernelRtlilTest, SigValMapVectorConnectionsContinueAfterSameRoot) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a), 3);
+		Wire *b = mod->addWire(ID(b), 3);
+
+		SigValMap<unsigned int> sigmap;
+		sigmap.addVal(SigBit(a, 1), 1);
+		sigmap.addVal(SigBit(b, 1), 2);
+		sigmap.add(SigSpec(std::vector<SigBit>{SigBit(a, 0), SigBit(a, 1), SigBit(a, 2)}),
+		           SigSpec(std::vector<SigBit>{SigBit(a, 0), SigBit(b, 1), SigBit(b, 2)}));
+
+		SigBit bit = SigBit(a, 1);
+		EXPECT_EQ(sigmap.apply_and_get_value(bit), 3u);
+		EXPECT_EQ(bit, SigBit(b, 1));
+		EXPECT_EQ(sigmap(SigBit(a, 2)), SigBit(b, 2));
+	}
+
 	TEST_F(KernelRtlilTest, SigMapCanonicalRepresentatives) {
 		Design design;
 		Module *mod = design.addModule("$test_mod");

@@ -1009,6 +1009,80 @@ public:
 	inline RTLIL::SigSpecConstIterator begin() const { RTLIL::SigSpecConstIterator it; it.sig_p = this; it.index = 0; return it; }
 	inline RTLIL::SigSpecConstIterator end() const { RTLIL::SigSpecConstIterator it; it.sig_p = this; it.index = size(); return it; }
 
+	// Visit corresponding bits while dispatching on each SigSpec representation
+	// only once. Callback references are valid only for the duration of the call.
+	template<typename Func>
+	inline void for_each_bit_pair(const RTLIL::SigSpec &other, Func &&func) const
+	{
+		log_assert(size() == other.size());
+
+		if (rep_ == BITS && other.rep_ == BITS) {
+			for (int i = 0; i < GetSize(bits_); i++)
+				func(bits_[i], other.bits_[i]);
+			return;
+		}
+
+		if (rep_ == BITS) {
+			RTLIL::SigBit other_bit;
+			other_bit.wire = other.chunk_.wire;
+			if (other_bit.wire != nullptr) {
+				other_bit.offset = other.chunk_.offset;
+				for (int i = 0; i < GetSize(bits_); i++, other_bit.offset++)
+					func(bits_[i], other_bit);
+			} else {
+				for (int i = 0; i < GetSize(bits_); i++) {
+					other_bit.data = other.chunk_.data[i];
+					func(bits_[i], other_bit);
+				}
+			}
+			return;
+		}
+
+		if (other.rep_ == BITS) {
+			RTLIL::SigBit bit;
+			bit.wire = chunk_.wire;
+			if (bit.wire != nullptr) {
+				bit.offset = chunk_.offset;
+				for (int i = 0; i < GetSize(other.bits_); i++, bit.offset++)
+					func(bit, other.bits_[i]);
+			} else {
+				for (int i = 0; i < GetSize(other.bits_); i++) {
+					bit.data = chunk_.data[i];
+					func(bit, other.bits_[i]);
+				}
+			}
+			return;
+		}
+
+		RTLIL::SigBit bit, other_bit;
+		bit.wire = chunk_.wire;
+		other_bit.wire = other.chunk_.wire;
+		if (bit.wire != nullptr && other_bit.wire != nullptr) {
+			bit.offset = chunk_.offset;
+			other_bit.offset = other.chunk_.offset;
+			for (int i = 0; i < chunk_.width; i++, bit.offset++, other_bit.offset++)
+				func(bit, other_bit);
+		} else if (bit.wire != nullptr) {
+			bit.offset = chunk_.offset;
+			for (int i = 0; i < chunk_.width; i++, bit.offset++) {
+				other_bit.data = other.chunk_.data[i];
+				func(bit, other_bit);
+			}
+		} else if (other_bit.wire != nullptr) {
+			other_bit.offset = other.chunk_.offset;
+			for (int i = 0; i < chunk_.width; i++, other_bit.offset++) {
+				bit.data = chunk_.data[i];
+				func(bit, other_bit);
+			}
+		} else {
+			for (int i = 0; i < chunk_.width; i++) {
+				bit.data = chunk_.data[i];
+				other_bit.data = other.chunk_.data[i];
+				func(bit, other_bit);
+			}
+		}
+	}
+
 	void sort();
 	void sort_and_unify();
 
