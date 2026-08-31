@@ -153,14 +153,14 @@ struct SynthEasicPass : public ScriptPass
 
 		if (check_label("fine"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 			run("techmap");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 			if (retime || help_mode) {
 				run("abc -dff -D 1", " (only if -retime)");
-				run("opt_clean", "(only if -retime)");
+				run_nocheck("opt_clean", "(only if -retime)");
 			}
 		}
 
@@ -168,7 +168,7 @@ struct SynthEasicPass : public ScriptPass
 		{
 			run(stringf("dfflibmap -liberty %s", help_mode ? "<etools_phys_clk_lib>" : phys_clk_lib));
 			run(stringf("abc -liberty %s", help_mode ? "<etools_logic_lut_lib>" : logic_lut_lib));
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("check"))

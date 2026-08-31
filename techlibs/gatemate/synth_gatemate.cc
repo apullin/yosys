@@ -244,18 +244,18 @@ struct SynthGateMatePass : public ScriptPass
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("muxpack");
 			run("share");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=4");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_mult", "(skip if '-nomult')") && !nomult)
@@ -266,9 +266,9 @@ struct SynthGateMatePass : public ScriptPass
 		if (check_label("coarse"))
 		{
 			run("alumacc");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_bram", "(skip if '-nobram')") && !nobram)
@@ -279,9 +279,9 @@ struct SynthGateMatePass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_gates"))
@@ -291,7 +291,7 @@ struct SynthGateMatePass : public ScriptPass
 				techmap_args += " -map +/gatemate/arith_map.v";
 			}
 			run("techmap -map +/techmap.v " + techmap_args);
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_io", "(skip if '-noiopad')") && !noiopad)
@@ -302,17 +302,17 @@ struct SynthGateMatePass : public ScriptPass
 				"-toutpad CC_TOBUF ~T:A:O "
 				"-tinoutpad CC_IOBUF ~T:Y:A:IO A:top"
 			);
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_regs"))
 		{
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("dfflegalize -cell $_DFFE_????_ 01 -cell $_DLATCH_???_ 01");
 			run("techmap -map +/gatemate/reg_map.v");
 			run("opt_expr -mux_undef");
 			run("simplemap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_muxs"))
@@ -325,7 +325,7 @@ struct SynthGateMatePass : public ScriptPass
 				muxcover_args += stringf(" -mux8");
 			}
 			run("muxcover " + muxcover_args);
-			run("opt -full");
+			run_nocheck("opt -full");
 			run("simplemap");
 			run("techmap -map +/gatemate/mux_map.v");
 		}
@@ -352,21 +352,21 @@ struct SynthGateMatePass : public ScriptPass
 				if (dff) {
 					abc_args += " -dff";
 				}
-				run("abc9 " + abc_args, "(without -luttree)");
+				run_nocheck("abc9 " + abc_args, "(without -luttree)");
 			}
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
 		{
 			run("techmap -map +/gatemate/lut_map.v");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_bufg", "(skip if '-noclkbuf')") && !noclkbuf)
 		{
 			run("clkbufmap -buf CC_BUFG O:I");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check"))
@@ -379,7 +379,7 @@ struct SynthGateMatePass : public ScriptPass
 
 		if (check_label("vlog"))
 		{
-			run("opt_clean -purge");
+			run_nocheck("opt_clean -purge");
 			if (!vlog_file.empty() || help_mode) {
 				run(stringf("write_verilog -noattr %s", help_mode ? "<file-name>" : vlog_file));
 			}

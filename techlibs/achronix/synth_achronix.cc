@@ -151,21 +151,21 @@ struct SynthAchronixPass : public ScriptPass {
 
     if (check_label("fine"))
       {
-        run("opt -fast -mux_undef -undriven -fine -full");
+        run_nocheck("opt -fast -mux_undef -undriven -fine -full");
         run("memory_map");
-        run("opt -undriven -fine");
-        run("opt -fine");
+        run_nocheck("opt -undriven -fine");
+        run_nocheck("opt -fine");
         run("techmap -map +/techmap.v");
-        run("opt -full");
-        run("clean -purge");
+        run_nocheck("opt -full");
+        run_nocheck("clean -purge");
         run("setundef -undriven -zero");
         run("dfflegalize -cell $_DFF_P_ x");
       }
 
     if (check_label("map_luts"))
       {
-        run("abc9 -lut 4");
-        run("clean");
+        run_nocheck("abc9 -lut 4");
+        run_nocheck("clean");
       }
 
     if (check_label("map_cells"))
@@ -173,7 +173,7 @@ struct SynthAchronixPass : public ScriptPass {
         run("iopadmap -bits -outpad $__outpad I:O -inpad $__inpad O:I A:top");
         run("techmap -map +/achronix/speedster22i/cells_map.v");
         // VT: not done yet run("dffinit -highlow -ff DFF q power_up");
-        run("clean -purge");
+        run_nocheck("clean -purge");
       }
 
     if (check_label("check"))

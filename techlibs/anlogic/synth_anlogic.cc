@@ -189,15 +189,15 @@ struct SynthAnlogicPass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_gates"))
 		{
 			run("techmap -map +/techmap.v -map +/anlogic/arith_map.v");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_ffs"))
@@ -210,14 +210,14 @@ struct SynthAnlogicPass : public ScriptPass
 
 		if (check_label("map_luts"))
 		{
-			run("abc9 -lut 4:6");
-			run("clean");
+			run_nocheck("abc9 -lut 4:6");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
 		{
 			run("techmap -map +/anlogic/cells_map.v");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_anlogic"))

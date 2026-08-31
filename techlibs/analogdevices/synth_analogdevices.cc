@@ -285,16 +285,16 @@ struct SynthAnalogDevicesPass : public ScriptPass
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			if (help_mode)
 				run("wreduce [-keepdc]", "(option for '-widemux')");
 			else
 				run("wreduce" + std::string(widemux > 0 ? " -keepdc" : ""));
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 
 			if (widemux > 0 || help_mode)
 				run("muxpack", "    ('-widemux' only)");
@@ -304,7 +304,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 			// Also: wide multiplexer inference benefits from this too
 			if (!(nosrl && widemux == 0) || help_mode) {
 				run("pmux2shiftx", "(skip if '-nosrl' and '-widemux=0')");
-				run("clean", "      (skip if '-nosrl' and '-widemux=0')");
+				run_nocheck("clean", "      (skip if '-nosrl' and '-widemux=0')");
 			}
 		}
 
@@ -344,9 +344,9 @@ struct SynthAnalogDevicesPass : public ScriptPass
 			run("techmap -map +/cmp2lut.v -map +/cmp2lcu.v -D LUT_WIDTH=6");
 			run("alumacc");
 			run("share");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_memory")) {
@@ -374,10 +374,10 @@ struct SynthAnalogDevicesPass : public ScriptPass
 
 		if (check_label("map_ffram")) {
 			if (widemux > 0) {
-				run("opt -fast -mux_bool -undriven -fine"); // Necessary to omit -mux_undef otherwise muxcover
+				run_nocheck("opt -fast -mux_bool -undriven -fine"); // Necessary to omit -mux_undef otherwise muxcover
 									    // performs less efficiently
 			} else {
-				run("opt -fast -full");
+				run_nocheck("opt -fast -full");
 			}
 			run("memory_map");
 		}
@@ -409,7 +409,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 				}
 				run("muxcover " + muxcover_args);
 			}
-			run("opt -full");
+			run_nocheck("opt -full");
 
 			if (!nosrl || help_mode)
 				run("xilinx_srl -variable -minlen 3", "(skip if '-nosrl')");
@@ -423,7 +423,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 				techmap_args += " -map +/analogdevices/arith_map.v";
 			}
 			run("techmap " + techmap_args);
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_cells")) {
@@ -435,7 +435,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 			if (widemux > 0)
 				techmap_args += stringf(" -D MIN_MUX_INPUTS=%d", widemux);
 			run("techmap " + techmap_args);
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_ffs")) {
@@ -465,7 +465,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 			if (dff)
 				abc9_opts += " -dff";
 			run("abc9" + abc9_opts);
-			run("clean");
+			run_nocheck("clean");
 
 			// This shregmap call infers fixed length shift registers after abc
 			//   has performed any necessary retiming
@@ -479,7 +479,7 @@ struct SynthAnalogDevicesPass : public ScriptPass
 		}
 
 		if (check_label("finalize")) {
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check")) {

@@ -303,14 +303,14 @@ struct SynthPass : public ScriptPass {
 			// synth pass
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			if (!nofsm)
 				run("fsm" + fsm_opts, "      (unless -nofsm)");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (help_mode)
 				run("techmap -map +/cmp2lut.v -map +/cmp2lcu.v", " (if -lut)");
 			else if (lut)
@@ -340,9 +340,9 @@ struct SynthPass : public ScriptPass {
 				run("alumacc", "  (unless -noalumacc)");
 			if (!noshare)
 				run("share", "    (unless -noshare)");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap" + memory_opts);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_memory")) {
@@ -355,9 +355,9 @@ struct SynthPass : public ScriptPass {
 		}
 
 		if (check_label("map_ffram")) {
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_arith")) {
@@ -366,17 +366,17 @@ struct SynthPass : public ScriptPass {
 			} else if (!arith_map.empty()) {
 				run(stringf("techmap -map %s -D ARITH_%s", arith_map.c_str(), carry_mode.c_str()));
 			}
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_gates")) {
-			run("opt -full");
+			run_nocheck("opt -full");
 			run("techmap -map +/techmap.v");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_iopad", "(skip if -noiopad)") && !noiopad) {
-			run("opt -full");
+			run_nocheck("opt -full");
 			std::string iopadmap_sel = (top_module.empty() && !autotop) ? "" : " A:top";
 			run("iopadmap -bits "
 			    "-inpad $__FABULOUS_IBUF OUT:PAD "
@@ -409,12 +409,12 @@ struct SynthPass : public ScriptPass {
 				run(map_str);
 			}
 			run("simplemap");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_luts")) {
-			run(stringf("abc9 -lut %d", lut));
-			run("clean");
+			run_nocheck(stringf("abc9 -lut %d", lut));
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells")) {
@@ -423,7 +423,7 @@ struct SynthPass : public ScriptPass {
 			} else if (!cells_map.empty()) {
 				run(stringf("techmap -D LUT_K=%d -map %s", lut, cells_map.c_str()));
 			}
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_clkbufs")) {
@@ -433,7 +433,7 @@ struct SynthPass : public ScriptPass {
 			} else if (clkbuf_map != "") {
 				run("clkbufmap -buf $__FABULOUS_GBUF OUT:IN");
 				run(stringf("techmap -map %s", clkbuf_map));
-				run("clean");
+				run_nocheck("clean");
 			}
 		}
 

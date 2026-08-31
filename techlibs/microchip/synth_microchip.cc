@@ -280,14 +280,14 @@ struct SynthMicrochipPass : public ScriptPass {
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_dsp", "(skip if '-nodsp')")) {
@@ -327,9 +327,9 @@ struct SynthMicrochipPass : public ScriptPass {
 			run("techmap -map +/cmp2lut.v -map +/cmp2lcu.v -D LUT_WIDTH=" + lut_size_s);
 			run("alumacc");
 			run("share");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (discard_ffinit || help_mode)
 				run("attrmap -remove init", "(only if -discard-ffinit)");
 		}
@@ -372,14 +372,14 @@ struct SynthMicrochipPass : public ScriptPass {
 		}
 
 		if (check_label("map_ffram")) {
-			run("opt -fast -full");
+			run_nocheck("opt -fast -full");
 
 			// blast unmapped RAM to flops or LUTs
 			run("memory_map");
 		}
 
 		if (check_label("fine")) {
-			run("opt -full");
+			run_nocheck("opt -full");
 
 			if (debug_carry)
 				run("write_verilog -noexpr ARI1_cells.vm");
@@ -415,7 +415,7 @@ struct SynthMicrochipPass : public ScriptPass {
 			// convert all remaining cells to gates
 			run("techmap -map +/techmap.v");
 
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_cells")) {
@@ -428,7 +428,7 @@ struct SynthMicrochipPass : public ScriptPass {
 
 			std::string techmap_args = "-map +/techmap.v -map +/microchip/cells_map.v";
 			run("techmap " + techmap_args);
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_ffs")) {
@@ -501,8 +501,8 @@ struct SynthMicrochipPass : public ScriptPass {
 				abc9_opts += stringf(" -maxlut %d", lut_size);
 			if (dff)
 				abc9_opts += " -dff";
-			run("abc9" + abc9_opts);
-			run("clean");
+			run_nocheck("abc9" + abc9_opts);
+			run_nocheck("clean");
 
 			std::string techmap_args = "-map +/microchip/cells_map.v -D FINAL_MAP";
 			techmap_args += " -D LUT_WIDTH=" + lut_size_s;
@@ -514,7 +514,7 @@ struct SynthMicrochipPass : public ScriptPass {
 
 		run("clkbufmap -buf CLKINT Y:A -inpad CLKBUF Y:PAD");
 
-		run("clean -purge");
+		run_nocheck("clean -purge");
 
 		if (check_label("check")) {
 			run("hierarchy -check");

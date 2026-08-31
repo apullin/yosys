@@ -196,11 +196,11 @@ struct SynthSf2Pass : public ScriptPass
 
 		if (check_label("fine"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 			run("techmap -map +/techmap.v -map +/sf2/arith_map.v");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_ffs"))
@@ -216,14 +216,14 @@ struct SynthSf2Pass : public ScriptPass
 
 		if (check_label("map_luts"))
 		{
-			run("abc9 -lut 4");
-			run("clean");
+			run_nocheck("abc9 -lut 4");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
 		{
 			run("techmap -map +/sf2/cells_map.v");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_iobs"))
@@ -238,7 +238,7 @@ struct SynthSf2Pass : public ScriptPass
 				}
 				run("iopadmap -bits -inpad INBUF Y:PAD -outpad OUTBUF D:PAD -toutpad TRIBUFF E:D:PAD -tinoutpad BIBUF E:Y:D:PAD A:top", "(unless -noiobs)");
 			}
-			run("clean -purge");
+			run_nocheck("clean -purge");
 		}
 
 		if (check_label("check"))

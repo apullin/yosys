@@ -210,8 +210,8 @@ struct PrepPass : public ScriptPass
 			run("future");
 			run(nokeepdc ? "opt_expr" : "opt_expr -keepdc");
 			run("check");
-			run("opt_clean");
-			run(nokeepdc ? "opt -noff" : "opt -noff -keepdc");
+			run_nocheck("opt_clean");
+			run_nocheck(nokeepdc ? "opt -noff" : "opt -noff -keepdc");
 			if (!ifxmode) {
 				if (help_mode)
 					run("wreduce -keepdc [-memx]");
@@ -225,10 +225,10 @@ struct PrepPass : public ScriptPass
 					run("memory_dff", "(if -rdff)");
 				if (help_mode || memxmode)
 					run("memory_memx", "(if -memx)");
-				run("opt_clean");
+				run_nocheck("opt_clean");
 				run("memory_collect");
 			}
-			run(nokeepdc ? "opt -noff -fast" : "opt -noff -keepdc -fast");
+			run_nocheck(nokeepdc ? "opt -noff -fast" : "opt -noff -keepdc -fast");
 			run("sort");
 		}
 

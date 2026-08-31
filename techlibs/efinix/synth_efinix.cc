@@ -190,15 +190,15 @@ struct SynthEfinixPass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine");
+			run_nocheck("opt -undriven -fine");
 		}
 
 		if (check_label("map_gates"))
 		{
 			run("techmap -map +/techmap.v -map +/efinix/arith_map.v");
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_ffs"))
@@ -213,14 +213,14 @@ struct SynthEfinixPass : public ScriptPass
 
 		if (check_label("map_luts"))
 		{
-			run("abc9 -lut 4");
-			run("clean");
+			run_nocheck("abc9 -lut 4");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_cells"))
 		{
 			run("techmap -map +/efinix/cells_map.v");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("map_gbuf"))
@@ -228,7 +228,7 @@ struct SynthEfinixPass : public ScriptPass
 			run("clkbufmap -buf $__EFX_GBUF O:I");
 			run("techmap -map +/efinix/gbuf_map.v");
 			run("efinix_fixcarry");
-			run("clean");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check"))

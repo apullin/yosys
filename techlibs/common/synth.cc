@@ -276,14 +276,14 @@ struct SynthPass : public ScriptPass {
 			}
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			if (!nofsm || help_mode)
 				run("fsm" + fsm_opts, "      (unless -nofsm)");
-			run("opt" + hieropt_flag);
+			run_nocheck("opt" + hieropt_flag);
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			if (help_mode)
 				run(techmap_cmd + " -map +/cmp2lut.v -map +/cmp2lcu.v", " (if -lut)");
 			else if (lut)
@@ -296,15 +296,15 @@ struct SynthPass : public ScriptPass {
 				run("arith_tree", " (if -arith_tree)");
 			if (!noshare)
 				run("share", "    (unless -noshare)");
-			run("opt" + hieropt_flag);
+			run_nocheck("opt" + hieropt_flag);
 			run("memory -nomap" + memory_opts);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("fine")) {
-			run("opt -fast -full" + hieropt_flag);
+			run_nocheck("opt -fast -full" + hieropt_flag);
 			run("memory_map");
-			run("opt -full");
+			run_nocheck("opt -full");
 			if (help_mode) {
 				run(techmap_cmd, "                  (unless -extra-map)");
 				run(techmap_cmd + " -map +/techmap.v -map <inject>", "  (if -extra-map)");
@@ -323,7 +323,7 @@ struct SynthPass : public ScriptPass {
 				run(stringf("%s -map +/gate2lut.v -D LUT_WIDTH=%d", techmap_cmd, lut));
 				run("clean; opt_lut");
 			}
-			run("opt -fast" + hieropt_flag);
+			run_nocheck("opt -fast" + hieropt_flag);
 
 			if (!noabc || help_mode) {
 #ifdef YOSYS_ENABLE_ABC
@@ -332,11 +332,11 @@ struct SynthPass : public ScriptPass {
 					run(abc + " -lut k", "(unless -noabc, if -lut)");
 				} else {
 					if (lut)
-						run(stringf("%s -lut %d", abc, lut));
+						run_nocheck(stringf("%s -lut %d", abc, lut));
 					else
 						run(abc);
 				}
-				run("opt -fast", "       (unless -noabc)");
+				run_nocheck("opt -fast", "       (unless -noabc)");
 #endif
 			}
 		}

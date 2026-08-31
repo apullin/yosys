@@ -317,7 +317,7 @@ struct SynthIntelPass : public ScriptPass {
 
 		if (check_label("vpr")) {
 			if (!blif_file.empty() || help_mode) {
-				run(stringf("opt_clean -purge"));
+				run_nocheck(stringf("opt_clean -purge"));
 				run(stringf("write_blif %s", help_mode ? "<file-name>" : blif_file));
 			}
 		}

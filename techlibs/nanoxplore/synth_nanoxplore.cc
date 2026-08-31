@@ -279,21 +279,21 @@ struct SynthNanoXplorePass : public ScriptPass
 			run("deminout");
 			run("opt_expr");
 			run("check");
-			run("opt_clean");
-			run("opt -nodffe -nosdff");
+			run_nocheck("opt_clean");
+			run_nocheck("opt -nodffe -nosdff");
 			run("fsm");
-			run("opt");
+			run_nocheck("opt");
 			run("wreduce");
 			run("peepopt");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("share");
 			run("techmap -map +/cmp2lut.v -D LUT_WIDTH=4");
 			run("opt_expr");
-			run("opt_clean");
+			run_nocheck("opt_clean");
 			run("alumacc");
-			run("opt");
+			run_nocheck("opt");
 			run("memory -nomap" + no_rw_check_opt);
-			run("opt_clean");
+			run_nocheck("opt_clean");
 		}
 
 		if (check_label("map_ram"))
@@ -315,9 +315,9 @@ struct SynthNanoXplorePass : public ScriptPass
 
 		if (check_label("map_ffram"))
 		{
-			run("opt -fast -mux_undef -undriven -fine");
+			run_nocheck("opt -fast -mux_undef -undriven -fine");
 			run("memory_map");
-			run("opt -undriven -fine -mux_undef");
+			run_nocheck("opt -undriven -fine -mux_undef");
 		}
 
 		if (check_label("map_gates"))
@@ -332,7 +332,7 @@ struct SynthNanoXplorePass : public ScriptPass
 				run("iopadmap -bits -outpad $__BEYOND_OBUF I:PAD -toutpad $__BEYOND_TOBUF C:I:PAD -inpad $__BEYOND_IBUF O:PAD -tinoutpad $__BEYOND_IOBUF C:O:I:PAD A:top", "(skip if '-noiopad')");
 				run("techmap -map +/nanoxplore/io_map.v");
 			}
-			run("opt -fast");
+			run_nocheck("opt -fast");
 		}
 
 		if (check_label("map_ffs"))
@@ -351,7 +351,7 @@ struct SynthNanoXplorePass : public ScriptPass
 			run("techmap -map +/nanoxplore/latches_map.v");
 			run("techmap -map +/nanoxplore/cells_map.v");
 			run("opt_expr -undriven -mux_undef");
-			run("clean -purge");
+			run_nocheck("clean -purge");
 		}
 
 		if (check_label("map_luts"))
@@ -364,8 +364,8 @@ struct SynthNanoXplorePass : public ScriptPass
 				abc9_opts += stringf(" -W %s", RTLIL::constpad.at(k));
 			run("abc9" + abc9_opts);
 			run("techmap -map +/nanoxplore/cells_map.v t:$lut");
-			run("opt -fast");
-			run("clean");
+			run_nocheck("opt -fast");
+			run_nocheck("clean");
 		}
 
 		if (check_label("check"))
