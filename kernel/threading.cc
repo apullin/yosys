@@ -43,7 +43,7 @@ void DeferredLogs::flush()
 int ThreadPool::pool_size(int reserved_cores, int max_worker_threads)
 {
 #ifdef YOSYS_ENABLE_THREADS
-	int available_threads = std::min<int>(std::thread::hardware_concurrency(), get_max_threads());
+	static const int available_threads = std::min<int>(std::thread::hardware_concurrency(), get_max_threads());
 	int num_threads = std::min(available_threads - reserved_cores, max_worker_threads);
 	return std::max(0, num_threads);
 #else
