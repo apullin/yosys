@@ -249,8 +249,13 @@ struct SigMapView
 
 	void apply(RTLIL::SigSpec &sig) const
 	{
-		for (auto &bit : sig)
-			apply(bit);
+		int width = sig.size();
+		if (width == 0)
+			return;
+		// Unpack and invalidate the cached hash once for the contiguous bit data.
+		RTLIL::SigBit *bits = &sig[0];
+		for (int i = 0; i < width; i++)
+			apply(bits[i]);
 	}
 
 	RTLIL::SigBit operator()(RTLIL::SigBit bit) const

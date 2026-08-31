@@ -505,6 +505,42 @@ namespace RTLIL {
 			EXPECT_EQ(sigmap(from[i]), to[i]);
 	}
 
+	TEST_F(KernelRtlilTest, SigMapApplyWholeSigSpec) {
+		Design design;
+		Module *mod = design.addModule("$test_mod");
+		Wire *a = mod->addWire(ID(a), 6);
+		Wire *b = mod->addWire(ID(b), 6);
+		Wire *c = mod->addWire(ID(c), 2);
+
+		SigMap sigmap;
+		SigSpec wire_input(a, 1, 4);
+		SigSpec wire_expected(std::vector<SigBit>{SigBit(b, 5), SigBit(State::S0), SigBit(b, 1), SigBit(State::S1)});
+		sigmap.add(wire_input, wire_expected);
+		EXPECT_NE(wire_input.hash_into(Hasher()).yield(), wire_expected.hash_into(Hasher()).yield());
+		sigmap.apply(wire_input);
+		EXPECT_EQ(wire_input, wire_expected);
+		EXPECT_EQ(wire_input.hash_into(Hasher()).yield(), wire_expected.hash_into(Hasher()).yield());
+
+		SigSpec bits_input(std::vector<SigBit>{SigBit(c, 0), SigBit(a, 0), SigBit(State::S0), SigBit(a, 5), SigBit(c, 1)});
+		sigmap.add(SigBit(a, 0), SigBit(b, 3));
+		sigmap.add(SigBit(a, 5), SigBit(State::S1));
+		sigmap.add(SigBit(c, 1), SigBit(b, 0));
+		SigSpec bits_expected(std::vector<SigBit>{SigBit(c, 0), SigBit(b, 3), SigBit(State::S0), SigBit(State::S1), SigBit(b, 0)});
+		EXPECT_NE(bits_input.hash_into(Hasher()).yield(), bits_expected.hash_into(Hasher()).yield());
+		sigmap.apply(bits_input);
+		EXPECT_EQ(bits_input, bits_expected);
+		EXPECT_EQ(bits_input.hash_into(Hasher()).yield(), bits_expected.hash_into(Hasher()).yield());
+
+		SigSpec constant(Const(std::vector<State>{State::S0, State::S1, State::Sx, State::Sz}));
+		SigSpec constant_expected = constant;
+		sigmap.apply(constant);
+		EXPECT_EQ(constant, constant_expected);
+
+		SigSpec empty;
+		sigmap.apply(empty);
+		EXPECT_TRUE(empty.empty());
+	}
+
 	TEST_F(KernelRtlilTest, SigValMapVectorConnectionsContinueAfterSameRoot) {
 		Design design;
 		Module *mod = design.addModule("$test_mod");
