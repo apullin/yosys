@@ -1,0 +1,7 @@
+read_verilog -sv constant_function_scope_restore.sv
+hierarchy -check -top top
+proc
+flatten
+opt_clean
+select -module top
+sat -verify -prove ok 1 -show a -show y -show constants

@@ -462,11 +462,97 @@ namespace AST
 
 namespace AST_INTERNAL
 {
+	// Constant-function evaluation temporarily changes a small part of the
+	// module scope. Journal those bindings instead of copying the whole scope.
+	class ScopeMap
+	{
+		using Map = dict<std::string, AST::AstNode*>;
+		struct SavedBinding {
+			std::string name;
+			AST::AstNode *value;
+			bool present;
+		};
+
+	public:
+		class Frame
+		{
+			friend class ScopeMap;
+			ScopeMap *scope;
+			Frame *previous;
+			std::vector<SavedBinding> saved;
+			pool<std::string> seen;
+
+			void record(const std::string &name)
+			{
+				if (!seen.insert(name).second)
+					return;
+				auto it = scope->bindings.find(name);
+				saved.push_back({name, it == scope->bindings.end() ? nullptr : it->second,
+						it != scope->bindings.end()});
+			}
+
+		public:
+			explicit Frame(ScopeMap &scope) : scope(&scope), previous(scope.frame)
+			{
+				scope.frame = this;
+			}
+			Frame(const Frame &) = delete;
+			Frame &operator=(const Frame &) = delete;
+			~Frame() { restore(); }
+
+			void restore()
+			{
+				if (scope == nullptr)
+					return;
+				log_assert(scope->frame == this);
+				for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
+					if (it->present)
+						scope->bindings[it->name] = it->value;
+					else
+						scope->bindings.erase(it->name);
+				}
+				scope->frame = previous;
+				scope = nullptr;
+			}
+		};
+
+	private:
+		Map bindings;
+		Frame *frame = nullptr;
+
+	public:
+		ScopeMap() = default;
+		ScopeMap(const ScopeMap &) = delete;
+		ScopeMap &operator=(const ScopeMap &) = delete;
+
+		AST::AstNode *&operator[](const std::string &name)
+		{
+			if (frame != nullptr)
+				frame->record(name);
+			return bindings[name];
+		}
+		AST::AstNode *at(const std::string &name) const { return bindings.at(name); }
+		auto find(const std::string &name) const { return bindings.find(name); }
+		auto begin() const { return bindings.begin(); }
+		auto end() const { return bindings.end(); }
+		auto count(const std::string &name) const { return bindings.count(name); }
+		auto size() const { return bindings.size(); }
+		bool empty() const { return bindings.empty(); }
+
+		void clear()
+		{
+			if (frame != nullptr)
+				for (auto &binding : bindings)
+					frame->record(binding.first);
+			bindings.clear();
+		}
+	};
+
 	// internal state variables
 	extern bool flag_nodisplay, flag_dump_ast1, flag_dump_ast2, flag_no_dump_ptr, flag_dump_rtlil, flag_nolatches, flag_nomeminit;
 	extern bool flag_nomem2reg, flag_mem2reg, flag_lib, flag_noopt, flag_icells, flag_pwires, flag_autowire;
 	extern AST::AstNode *current_ast, *current_ast_mod;
-	extern dict<std::string, AST::AstNode*> current_scope;
+	extern ScopeMap current_scope;
 	extern const dict<RTLIL::SigBit, RTLIL::SigBit> *genRTLIL_subst_ptr;
 	extern RTLIL::SigSpec ignoreThisSignalsInInitial;
 	extern AST::AstNode *current_always, *current_top_block, *current_block, *current_block_child;

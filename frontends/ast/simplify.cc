@@ -1051,7 +1051,7 @@ public:
 		}
 	}
 
-	void import(dict<std::string, AstNode*>& scope, AstNode* to_import) const {
+	void import(ScopeMap& scope, AstNode* to_import) const {
 		// Check if this is a specific import and if this item should be imported
 		if (!is_wildcard && import_items.count(to_import->str) == 0)
 			return;
@@ -6000,7 +6000,7 @@ bool AstNode::replace_variables(std::map<std::string, AstNode::varinfo_t> &varia
 // attempt to statically evaluate a functions with all-const arguments
 std::unique_ptr<AstNode> AstNode::eval_const_function(AstNode *fcall, bool must_succeed)
 {
-	dict<std::string, AstNode*> backup_scope = current_scope;
+	ScopeMap::Frame scope_frame(current_scope);
 	std::map<std::string, AstNode::varinfo_t> variables;
 	auto block = std::make_unique<AstNode>(location, AST_BLOCK);
 	std::unique_ptr<AstNode> result = nullptr;
@@ -6279,7 +6279,7 @@ std::unique_ptr<AstNode> AstNode::eval_const_function(AstNode *fcall, bool must_
 	result = AstNode::mkconst_bits(location, variables.at(str).val.to_bits(), variables.at(str).is_signed);
 
 finished:
-	current_scope = backup_scope;
+	scope_frame.restore();
 	return result;
 }
 
