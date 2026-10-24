@@ -44,7 +44,8 @@ YOSYS_NAMESPACE_BEGIN
 using namespace AST;
 using namespace AST_INTERNAL;
 
-static void reset_genblock_scope();
+static bool resolve_module_scope(const std::string &name);
+static void reset_module_scope_index();
 
 void AstNode::set_in_lvalue_flag(bool flag, bool no_descend)
 {
@@ -1285,7 +1286,7 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	// also merge multiple declarations for the same wire (e.g. "output foobar; reg foobar;")
 	if (type == AST_MODULE || type == AST_INTERFACE) {
 		current_scope.clear();
-		reset_genblock_scope();
+		reset_module_scope_index();
 		std::set<std::string> existing;
 		int counter = 0;
 		label_genblks(existing, counter);
@@ -2097,7 +2098,7 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 
 	if (type == AST_MODULE || type == AST_INTERFACE) {
 		current_scope.clear();
-		reset_genblock_scope();
+		reset_module_scope_index();
 	}
 
 	// convert defparam nodes to cell parameters
@@ -2516,40 +2517,8 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 		if (scope_it != current_scope.end())
 			scope_node = scope_it->second;
 		else {
-			AstNode *current_scope_ast = (current_ast_mod == nullptr) ? current_ast : current_ast_mod;
 			str = try_pop_module_prefix();
-			for (auto& node : current_scope_ast->children) {
-				//log("looking at mod scope child %s\n", type2str(node->type));
-				switch (node->type) {
-				case AST_PARAMETER:
-				case AST_LOCALPARAM:
-				case AST_WIRE:
-				case AST_AUTOWIRE:
-				case AST_GENVAR:
-				case AST_MEMORY:
-				case AST_FUNCTION:
-				case AST_TASK:
-				case AST_DPI_FUNCTION:
-					//log("found child %s, %s\n", type2str(node->type), node->str);
-					if (str == node->str) {
-						//log("add %s, type %s to scope\n", str, type2str(node->type));
-						current_scope[node->str] = node.get();
-					}
-					break;
-				case AST_ENUM:
-					current_scope[node->str] = node.get();
-					for (auto& enum_node : node->children) {
-						log_assert(enum_node->type==AST_ENUM_ITEM);
-						if (str == enum_node->str) {
-							//log("\nadding enum item %s to scope\n", str);
-							current_scope[str] = enum_node.get();
-						}
-					}
-					break;
-				default:
-					break;
-				}
-			}
+			resolve_module_scope(str);
 			scope_it = current_scope.find(str);
 			if (scope_it != current_scope.end())
 				scope_node = scope_it->second;
@@ -5101,8 +5070,12 @@ std::unique_ptr<AstNode> AstNode::readmem(bool is_readmemh, std::string mem_file
 
 // During a module simplify pass, expansion appends declarations to the module.
 // Index the appended suffix on demand instead of scanning the whole module for
-// every unresolved identifier. A scope rebuild invalidates the index.
-struct GenblockScope
+// every unresolved identifier. The indexed prefix retains its node identities,
+// declaration names and declaration membership until the scope is rebuilt;
+// declaration payloads may still be simplified in place. Removing, renaming or
+// replacing indexed nodes must invalidate the index, not rely on the child-count
+// guard. A module scope rebuild invalidates the index.
+struct ModuleScopeIndex
 {
 	struct Binding {
 		AstNode *node = nullptr;
@@ -5170,15 +5143,20 @@ struct GenblockScope
 	}
 };
 
-static GenblockScope &genblock_scope()
+static ModuleScopeIndex &module_scope_index()
 {
-	static GenblockScope scope;
+	static ModuleScopeIndex scope;
 	return scope;
 }
 
-static void reset_genblock_scope()
+static bool resolve_module_scope(const std::string &name)
 {
-	genblock_scope().reset();
+	return module_scope_index().resolve(name);
+}
+
+static void reset_module_scope_index()
+{
+	module_scope_index().reset();
 }
 
 // annotate the names of all wires and other named objects in a named generate
@@ -5308,7 +5286,7 @@ void AstNode::expand_genblock(const std::string &prefix)
 					}
 					if (current_scope.count(identifier_str) == 0) {
 						make_prefixed_id(resolved, prefix, prefix_size, identifier_str);
-						if (genblock_scope().resolve(resolved))
+						if (resolve_module_scope(resolved))
 							is_resolved = true;
 					}
 				}

@@ -70,6 +70,34 @@ TEST_F(GenblockScopeTest, RegistersEnumsEvenOnAnInnerScopeMiss)
 	EXPECT_EQ(current_scope.at("\\block.choice"), module->children[0]->children[0].get());
 }
 
+TEST_F(GenblockScopeTest, RegistersAnOrdinaryEnumNameWithoutAMatchingItem)
+{
+	auto enumeration = node(AST::AST_ENUM, "\\enum_type");
+	enumeration->children.push_back(node(AST::AST_ENUM_ITEM, "\\other"));
+	module->children.push_back(std::move(enumeration));
+	auto identifier = node(AST::AST_IDENTIFIER, "\\enum_type");
+	identifier->simplify(false, 1, -1, false);
+	EXPECT_EQ(identifier->id2ast, module->children[0].get());
+	EXPECT_EQ(current_scope.at("\\enum_type"), module->children[0].get());
+	EXPECT_EQ(current_scope.count("\\other"), 0);
+}
+
+TEST_F(GenblockScopeTest, EnumNameRegistrationDoesNotCountAsAMatchedDeclaration)
+{
+	auto enumeration = node(AST::AST_ENUM, "\\block.$global_clock");
+	enumeration->children.push_back(node(AST::AST_ENUM_ITEM, "\\other"));
+	module->children.push_back(std::move(enumeration));
+	// The old scan registers enum names but only reports declaration/item
+	// matches. $global_clock permits the resulting autowire without changing
+	// the frontend's global autowire setting.
+	auto block = reference("\\$global_clock");
+	block->expand_genblock("\\block.");
+	ASSERT_EQ(block->children.size(), 2);
+	EXPECT_EQ(block->children[1]->type, AST::AST_AUTOWIRE);
+	EXPECT_EQ(block->children[1]->str, "\\block.$global_clock");
+	EXPECT_EQ(current_scope.at("\\block.$global_clock"), block->children[1].get());
+}
+
 TEST_F(GenblockScopeTest, PreservesDuplicateDeclarationOrder)
 {
 	module->children.push_back(node(AST::AST_WIRE, "\\block.x"));
@@ -118,6 +146,34 @@ TEST_F(GenblockScopeTest, IndexesAppendedDeclarationsWithoutARebuild)
 	module->children.push_back(node(AST::AST_WIRE, "\\block.x"));
 	reference("\\x")->expand_genblock("\\block.");
 	module->children.push_back(node(AST::AST_WIRE, "\\block.y"));
+	auto block = reference("\\y");
+	block->expand_genblock("\\block.");
+	EXPECT_EQ(block->children[0]->str, "\\block.y");
+	EXPECT_EQ(current_scope.at("\\block.y"), module->children[1].get());
+}
+
+TEST_F(GenblockScopeTest, CachedLookupsSurviveNestedScopeRestoration)
+{
+	module->children.push_back(node(AST::AST_WIRE, "\\block.x"));
+	module->children.push_back(node(AST::AST_WIRE, "\\block.y"));
+	reference("\\x")->expand_genblock("\\block.");
+	const auto revision = current_scope.revision();
+	auto temporary = node(AST::AST_WIRE, "\\block.x");
+	{
+		ScopeMap::Frame outer(current_scope);
+		current_scope["\\block.x"] = temporary.get();
+		{
+			ScopeMap::Frame inner(current_scope);
+			reference("\\y")->expand_genblock("\\block.");
+			EXPECT_EQ(current_scope.at("\\block.y"), module->children[1].get());
+			current_scope["\\block.x"] = module->children[1].get();
+		}
+		EXPECT_EQ(current_scope.at("\\block.x"), temporary.get());
+		EXPECT_EQ(current_scope.count("\\block.y"), 0);
+	}
+	EXPECT_EQ(current_scope.at("\\block.x"), module->children[0].get());
+	EXPECT_EQ(current_scope.count("\\block.y"), 0);
+	EXPECT_EQ(current_scope.revision(), revision);
 	auto block = reference("\\y");
 	block->expand_genblock("\\block.");
 	EXPECT_EQ(block->children[0]->str, "\\block.y");
@@ -190,6 +246,33 @@ TEST_F(GenblockScopeTest, DoesNotBuildAnUnusedIndex)
 	auto block = reference("\\x");
 	block->expand_genblock("\\block.");
 	EXPECT_EQ(block->children[0]->str, "\\x");
+}
+
+TEST_F(GenblockScopeTest, ResolvesOrdinaryIdentifiersOutsideCurrentScope)
+{
+	module->children.push_back(node(AST::AST_WIRE, "\\x"));
+	module->children.push_back(node(AST::AST_WIRE, "\\y"));
+	auto identifier = node(AST::AST_IDENTIFIER, "\\x");
+	identifier->simplify(false, 1, -1, false);
+	EXPECT_EQ(identifier->id2ast, module->children[0].get());
+	EXPECT_EQ(current_scope.at("\\x"), module->children[0].get());
+	auto another = node(AST::AST_IDENTIFIER, "\\y");
+	another->simplify(false, 1, -1, false);
+	EXPECT_EQ(another->id2ast, module->children[1].get());
+}
+
+TEST_F(GenblockScopeTest, SharesTheIndexWithOrdinaryIdentifierResolution)
+{
+	module->children.push_back(node(AST::AST_WIRE, "\\block.x"));
+	module->children.push_back(node(AST::AST_WIRE, "\\global"));
+	reference("\\x")->expand_genblock("\\block.");
+	module->children.push_back(node(AST::AST_WIRE, "\\later"));
+	auto identifier = node(AST::AST_IDENTIFIER, "\\global");
+	identifier->simplify(false, 1, -1, false);
+	EXPECT_EQ(identifier->id2ast, module->children[1].get());
+	auto another = node(AST::AST_IDENTIFIER, "\\later");
+	another->simplify(false, 1, -1, false);
+	EXPECT_EQ(another->id2ast, module->children[2].get());
 }
 
 } // namespace
