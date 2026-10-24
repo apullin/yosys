@@ -477,11 +477,12 @@ struct WireDeleter {
 				Const initval;
 				bool has_init_attribute = wire->attributes.count(ID::init);
 				bool init_changed = false;
-				if (has_init_attribute)
+				if (has_init_attribute) {
 					initval = wire->attributes.at(ID::init);
-				if (GetSize(initval) != GetSize(wire)) {
-					initval.resize(GetSize(wire), State::Sx);
-					init_changed = true;
+					if (GetSize(initval) != GetSize(wire)) {
+						initval.resize(GetSize(wire), State::Sx);
+						init_changed = true;
+					}
 				}
 				bool raw_connected = contains_wire(used_sig_analysis.raw_connected, wire);
 
@@ -511,7 +512,7 @@ struct WireDeleter {
 					RTLIL::SigSig new_conn;
 					for (int i = 0; i < GetSize(s1); i++)
 						if (s1[i] != s2[i]) {
-							if (s2[i] == State::Sx && (initval[i] == State::S0 || initval[i] == State::S1)) {
+							if (has_init_attribute && s2[i] == State::Sx && (initval[i] == State::S0 || initval[i] == State::S1)) {
 								s2[i] = initval[i];
 								initval.set(i, State::Sx);
 								init_changed = true;
