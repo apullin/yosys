@@ -36,6 +36,12 @@ void rmunused_module_signals_to_fixpoint(RTLIL::Module *module, ParallelDispatch
 
 void rmunused_module(RTLIL::Module *module, bool rminit, CleanRunContext &clean_ctx)
 {
+	// The final signal-cleanup iteration normalizes init values onto canonical
+	// bits and removes all-X/Z attributes, leaving nothing for init cleanup.
+	// Monitors may inject new values, even if they unregister during cleanup,
+	// so capture their presence before running any cleanup callbacks.
+	const bool init_is_redundant = module->monitors.empty() && module->design->monitors.empty();
+
 	if (clean_ctx.flags.verbose)
 		log("Finding unused cells or wires in module %s..\n", module->name);
 
@@ -55,7 +61,7 @@ void rmunused_module(RTLIL::Module *module, bool rminit, CleanRunContext &clean_
 	if (removed_signals)
 		rmunused_module_signals_to_fixpoint(module, subpool, clean_ctx);
 
-	if (rminit && rmunused_module_init(module, subpool, clean_ctx.flags.verbose))
+	if (rminit && !init_is_redundant && rmunused_module_init(module, subpool, clean_ctx.flags.verbose))
 		rmunused_module_signals_to_fixpoint(module, subpool, clean_ctx);
 }
 
