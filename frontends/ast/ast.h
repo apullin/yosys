@@ -519,6 +519,7 @@ namespace AST_INTERNAL
 	private:
 		Map bindings;
 		Frame *frame = nullptr;
+		uint64_t generation = 0;
 
 	public:
 		ScopeMap() = default;
@@ -538,6 +539,7 @@ namespace AST_INTERNAL
 		auto count(const std::string &name) const { return bindings.count(name); }
 		auto size() const { return bindings.size(); }
 		bool empty() const { return bindings.empty(); }
+		uint64_t revision() const { return generation; }
 
 		void clear()
 		{
@@ -545,6 +547,7 @@ namespace AST_INTERNAL
 				for (auto &binding : bindings)
 					frame->record(binding.first);
 			bindings.clear();
+			++generation;
 		}
 	};
 

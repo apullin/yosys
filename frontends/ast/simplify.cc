@@ -44,6 +44,8 @@ YOSYS_NAMESPACE_BEGIN
 using namespace AST;
 using namespace AST_INTERNAL;
 
+static void reset_genblock_scope();
+
 void AstNode::set_in_lvalue_flag(bool flag, bool no_descend)
 {
 	if (flag != in_lvalue_from_above) {
@@ -1283,6 +1285,7 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	// also merge multiple declarations for the same wire (e.g. "output foobar; reg foobar;")
 	if (type == AST_MODULE || type == AST_INTERFACE) {
 		current_scope.clear();
+		reset_genblock_scope();
 		std::set<std::string> existing;
 		int counter = 0;
 		label_genblks(existing, counter);
@@ -2092,8 +2095,10 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 	current_always = backup_current_always;
 	current_always_clocked = backup_current_always_clocked;
 
-	if (type == AST_MODULE || type == AST_INTERFACE)
+	if (type == AST_MODULE || type == AST_INTERFACE) {
 		current_scope.clear();
+		reset_genblock_scope();
+	}
 
 	// convert defparam nodes to cell parameters
 	if (type == AST_DEFPARAM && !children.empty())
@@ -5094,6 +5099,88 @@ std::unique_ptr<AstNode> AstNode::readmem(bool is_readmemh, std::string mem_file
 	return block;
 }
 
+// During a module simplify pass, expansion appends declarations to the module.
+// Index the appended suffix on demand instead of scanning the whole module for
+// every unresolved identifier. A scope rebuild invalidates the index.
+struct GenblockScope
+{
+	struct Binding {
+		AstNode *node = nullptr;
+		bool matched = false;
+	};
+	AstNode *scope_ast = nullptr;
+	uint64_t revision = 0;
+	size_t indexed_children = 0;
+	dict<std::string, Binding> bindings;
+	std::vector<AstNode*> enums;
+
+	void reset()
+	{
+		scope_ast = nullptr;
+		indexed_children = 0;
+		bindings.clear();
+		enums.clear();
+	}
+
+	bool resolve(const std::string &name)
+	{
+		AstNode *current = current_ast_mod == nullptr ? current_ast : current_ast_mod;
+		log_assert(current != nullptr);
+		if (current != scope_ast || revision != current_scope.revision() || current->children.size() < indexed_children) {
+			reset();
+			scope_ast = current;
+			revision = current_scope.revision();
+		}
+		for (; indexed_children < scope_ast->children.size(); ++indexed_children) {
+			auto &node = scope_ast->children[indexed_children];
+			switch (node->type) {
+			case AST_PARAMETER:
+			case AST_LOCALPARAM:
+			case AST_WIRE:
+			case AST_AUTOWIRE:
+			case AST_GENVAR:
+			case AST_MEMORY:
+			case AST_FUNCTION:
+			case AST_TASK:
+			case AST_DPI_FUNCTION:
+				bindings[node->str] = {node.get(), true};
+				break;
+			case AST_ENUM:
+				enums.push_back(node.get());
+				bindings[node->str].node = node.get();
+				for (auto &item : node->children) {
+					log_assert(item->type == AST_ENUM_ITEM);
+					bindings[item->str] = {item.get(), true};
+				}
+				break;
+			default:
+				break;
+			}
+		}
+
+		// The old scan registers every enum even when the searched name misses.
+		for (auto node : enums)
+			current_scope[node->str] = node;
+		auto it = bindings.find(name);
+		if (it == bindings.end() || !it->second.matched)
+			return false;
+		// Keep the last write in declaration order, including enum name clashes.
+		current_scope[name] = it->second.node;
+		return true;
+	}
+};
+
+static GenblockScope &genblock_scope()
+{
+	static GenblockScope scope;
+	return scope;
+}
+
+static void reset_genblock_scope()
+{
+	genblock_scope().reset();
+}
+
 // annotate the names of all wires and other named objects in a named generate
 // or procedural block; nested blocks are themselves annotated such that the
 // prefix is carried forward, but resolution of their children is deferred
@@ -5220,38 +5307,9 @@ void AstNode::expand_genblock(const std::string &prefix)
 						}
 					}
 					if (current_scope.count(identifier_str) == 0) {
-						AstNode *current_scope_ast = (current_ast_mod == nullptr) ? current_ast : current_ast_mod;
 						make_prefixed_id(resolved, prefix, prefix_size, identifier_str);
-						for (auto& node : current_scope_ast->children) {
-							switch (node->type) {
-							case AST_PARAMETER:
-							case AST_LOCALPARAM:
-							case AST_WIRE:
-							case AST_AUTOWIRE:
-							case AST_GENVAR:
-							case AST_MEMORY:
-							case AST_FUNCTION:
-							case AST_TASK:
-							case AST_DPI_FUNCTION:
-								if (resolved == node->str) {
-									is_resolved = true;
-									current_scope[node->str] = node.get();
-								}
-								break;
-							case AST_ENUM:
-								current_scope[node->str] = node.get();
-								for (auto& enum_node : node->children) {
-									log_assert(enum_node->type==AST_ENUM_ITEM);
-									if (resolved == enum_node->str) {
-										is_resolved = true;
-										current_scope[enum_node->str] = enum_node.get();
-									}
-								}
-								break;
-							default:
-								break;
-							}
-						}
+						if (genblock_scope().resolve(resolved))
+							is_resolved = true;
 					}
 				}
 				if ((current_scope.count(identifier_str) == 0) && is_resolved == false) {
